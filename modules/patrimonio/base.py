@@ -100,4 +100,3 @@ def pt_cadbai():
 
     [insert(row['cdBairro'], EMPRESA, row['dsBairro']) for row in rows]
     commit()
-    
