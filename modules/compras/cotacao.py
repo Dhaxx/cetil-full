@@ -1,5 +1,5 @@
-from connection import commit, CUR_FDB, CUR_SQLS, fetchallmap
-from utils import limpa_tabela, cria_campo, EMPRESA, dict_produtos, dict_fornecedores
+from connection import commit, CUR_FDB, fetchallmap
+from utils import limpa_tabela, EMPRESA, dict_produtos, dict_fornecedores
 
 def itens():
     limpa_tabela(('icadorc', 'cadorc'))

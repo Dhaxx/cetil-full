@@ -1,7 +1,7 @@
 from connection import commit, CUR_FDB, fetchallmap
 from utils import limpa_tabela, cria_campo, EMPRESA, dict_produtos
 
-def Cadunimedida():
+def cadunimedida():
     limpa_tabela("cadunimedida")
 
     rows = fetchallmap("SELECT * FROM UnidadeMedida")
@@ -101,7 +101,6 @@ def cadest():
             grupo_atual = row['grupo']
             subgrupo_int = 0
 
-            #TODO: verificar grupo geral
             localiza_grupo = next((x for x in grupos if x['id'] == row['cdclassereduzido'] and x['tipo'] == row['tpmaterial']), None) 
 
             grupo = localiza_grupo['grupo']
@@ -129,7 +128,7 @@ def cadest():
         CUR_FDB.execute("INSERT INTO Cadest(cadpro, grupo, subgrupo, codreduz,codigo, disc1, discr1, tipopro, usopro, unid1) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", 
                     (cadpro,grupo,subgrupo,codreduz,codigo,disc1,discr1,tipopro,usopro,unid1))  
         dict_produtos[codreduz] = cadpro
-    cadpro()
+    commit()
 
 def centro_custo():
     limpa_tabela('centrocusto')

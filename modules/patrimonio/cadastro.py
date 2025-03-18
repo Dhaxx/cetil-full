@@ -1,54 +1,59 @@
-from connection import commit, CUR_FDB, CUR_SQLS, fetchallmap
-from utils import EMPRESA, limpa_tabela, exec_statment
+from connection import commit, CUR_FDB, fetchallmap
+from utils import EMPRESA, limpa_tabela, cria_campo
 
 def pt_cadpat():
     limpa_tabela('pt_cadpat')
 
-    rows = fetchallmap("""
-    select
-            distinct item.cditem,
-            case when item.nrplaca = '' then 'S/P ' + cast(item.cditem as varchar) else item.nrplaca end nrplaca,
-            item.nrnotafiscal,
-            item.cdtpingresso,
-            item.cdlocalizacao as sub,
-            item.cdclassificacao,
-            estadoconservacao.cdestadoconser,
-            item.dsreduzida,
-            item.dtaquisicao,
-            item.vlaquisicao,
-            item.vlatual,
-            cdfornecedor,
-            item.dtultmovto,
-            item.dsmodelo,
-            item.dsmarca,
-            item.dsnrserie,
-            'M' as percentemp_pat,
-            case
-                when cdmetododepreciacao = 1 then 'V'
-                else null
-            end as dae_pat,
-            item.vlresidual as valres_pat,
-            item.vidautil * 12 as percenqtd_pat,
-            coalesce(item.dtiniciodepreciacao,
-            item.dtaquisicao ) as dtlan,
-            substring(replace(c.cdnivelcontabil, '.', ''), 1, 9) as balco,
-            case when substring(replace(c.cdnivelcontabil, '.', ''), 1, 4) = '1232' 
-                then 2 else 1 end as grupo
-        from
-            item
-        inner join localizacao on
-            item.cdlocalizacao = localizacao.cdlocalreduzido
-        inner join classificacao on
-            item.cdclassificacao = classificacao.cdclassereduzido
-        inner join estadoconservacao on
-            item.cdestadoconser = estadoconservacao.cdestadoconser
-        left join BORA_PPA.dbo.ppaplanoconta c on
-            c.cdcontacontabil = item.cdcontabil
-        left join itemempenhos on
-            item.cditem = itemempenhos.cditem
-        order by
-            item.cditem
-    """)
+    query = """
+    select distinct item.cditem,
+	case
+		when item.nrplaca = '' then cast(item.cditem as varchar)
+		else item.nrplaca
+	end nrplaca,
+	item.nrnotafiscal,
+	item.cdtpingresso,
+	item.cdlocalizacao,
+	item.cdclassificacao,
+	estadoconservacao.cdestadoconser,
+	item.dsreduzida,
+	item.dtaquisicao,
+	item.vlaquisicao,
+	item.vlatual,
+	cdfornecedor,
+	item.dtultmovto,
+	item.dsmodelo,
+	item.dsmarca,
+	item.dsnrserie,
+	'M' as percentemp_pat,
+	case
+		when cdmetododepreciacao = 1 then 'V'
+		else null
+	end as dae_pat,
+	item.vlresidual as valres_pat,
+	item.vidautil * 12 as percenqtd_pat,
+	coalesce(item.dtiniciodepreciacao,
+	item.dtaquisicao ) as dtlan,
+	substring(replace(c.cdnivelcontabil, '.', ''), 1, 9) as balco,
+	case
+		when substring(replace(c.cdnivelcontabil, '.', ''), 1, 4) = '1232' then 2
+		else 1
+	end as grupo
+    from
+        BORA_PATRI.dbo.item
+    inner join BORA_PATRI.dbo.localizacao on
+        item.cdlocalizacao = localizacao.cdlocalreduzido
+    inner join BORA_PATRI.dbo.classificacao on
+        item.cdclassificacao = classificacao.cdclassereduzido
+    inner join BORA_PATRI.dbo.estadoconservacao on
+        item.cdestadoconser = estadoconservacao.cdestadoconser
+    left join BORA_PPA.dbo.ppaplanoconta c on
+        c.cdcontacontabil = item.cdcontabil
+    left join BORA_PATRI.dbo.itemempenhos on
+        item.cditem = itemempenhos.cditem
+    order by
+        item.cditem"""
+
+    rows = fetchallmap(query)
 
     insert = CUR_FDB.prep("""
     insert
@@ -92,12 +97,12 @@ def pt_cadpat():
         hash_sinc = row['cditem']
         empresa_pat = EMPRESA
         codigo_gru_pat = row['grupo']
-        chapa_pat = row['nrplaca'][:6]
-        codigo_set_pat = row['sub']
-        codigo_set_atu_pat = row['sub']
+        chapa_pat = str(row['nrplaca']).zfill(6)
+        codigo_set_pat = row['cdlocalizacao']
+        codigo_set_atu_pat = row['cdlocalizacao']
         nota_pat = row['nrnotafiscal'][:10]
-        orig_pat = tipos_bens.get(row['cdtpingresso'], default="I")
-        obs_pat = row['dsItem']
+        orig_pat = tipos_bens.get(row['cdtpingresso'], "I")
+        obs_pat = row['dsreduzida']
         codigo_sit_pat = row['cdestadoconser']
         discr_pat = row['dsreduzida'][:255]
         datae_pat = row['dtaquisicao']
@@ -111,7 +116,7 @@ def pt_cadpat():
         percenqtd_pat = int(row['percenqtd_pat'])
         codigo_cpl_pat = row['balco']
         codigo_tip_pat = row['cdclassificacao']
-        codif = row['cdFornecedor']
+        codif = row['cdfornecedor']
 
         CUR_FDB.execute(insert, (codigo_pat, empresa_pat, codigo_gru_pat,
         chapa_pat, codigo_set_pat, codigo_set_atu_pat,
@@ -124,6 +129,7 @@ def pt_cadpat():
 
 def pt_movbem():
     limpa_tabela('pt_movbem')
+    cria_campo('pt_movbem', 'codigo_set_mov_ant')
 
     rows = fetchallmap("""
     select
@@ -153,8 +159,8 @@ def pt_movbem():
             chmovimento,
             'N' depreciacao
         from
-            movimento m
-        left join motivo v on
+            BORA_PATRI.dbo.movimento m
+        left join BORA_PATRI.dbo.motivo v on
             v.cdmotivo = m.cdmotivo
         where
             inestorno > -1
@@ -163,7 +169,7 @@ def pt_movbem():
         select
             cditem,
             dtmovimento,
-            'D',
+            'R',
             vldepreciacao *-1,
             'Depreciação',
             null,
@@ -175,14 +181,14 @@ def pt_movbem():
             99999999,
             'S' depreciacao
         from
-            movimentodepreciacao md
+            BORA_PATRI.dbo.movimentodepreciacao md
         where
             inestorno > -1
             and not exists(
             select
                 1
             from
-                movimentodepreciacao mc
+                BORA_PATRI.dbo.movimentodepreciacao mc
             where
                 mc.cditem = md.cditem
                 and mc.dtestorno = md.dtmovimento
@@ -204,9 +210,9 @@ def pt_movbem():
             99999999,
             'N'
         from
-            movimentovlcomplementar c
+            BORA_PATRI.dbo.movimentovlcomplementar c
         where
-            inestorno > -1 and exists(select 1 from item i where i.cditem = c.cditem)) as movimentacao
+            inestorno > -1 and exists(select 1 from BORA_PATRI.dbo.item i where i.cditem = c.cditem)) as movimentacao
     order by
         cditem,
         dtmovimento ,
@@ -226,16 +232,18 @@ def pt_movbem():
             , lote_mov
             , codigo_cpl_mov
             , codigo_set_mov
+            , codigo_set_mov_ant
             , documento_mov
             , historico_mov
             , dt_contabil
             , depreciacao_mov
             , codigo_bai_mov
-            , codigo_set_mov_ant
         )
         values(?,?,?,?,?
         ,?,?,?,?,?,?,?,?,?,?)
     """)
+
+    dtlan = {}
 
     for i, row in enumerate(rows):
         i += 1
@@ -246,7 +254,12 @@ def pt_movbem():
         tipo_mov = row['tipomovimento']
         valor_mov = row['valor']
         lote_mov = 0
-        codigo_cpl_mov = '123810199' if row.intipomovimento == 'D' else None
+        if (row['intipomovimento'] == 'R' and row['depreciacao'] == 'S'):
+            codigo_cpl_mov = '123810199'  
+        elif (row['intipomovimento'] == 'R' and row['depreciacao'] == 'N'):
+            codigo_cpl_mov = '237110301'
+            dtlan[codigo_pat_mov] = data_mov
+        else: codigo_cpl_mov = None
         codigo_set_mov = row['cdlocalatual']
         codigo_set_mov_ant = row['cdlocalanterior']
         documento_mov = row['obs']
@@ -272,6 +285,10 @@ def pt_movbem():
         , codigo_bai_mov)) 
     commit()
 
+    [CUR_FDB.execute(f"update pt_cadpat set dtlan_pat = '{v.strftime('%Y-%m-%d')}' where codigo_pat = {k}") for k,v in dtlan.items()]
+    commit()
+
+    # Atualiza a data e tipo de baixa no cadastro
     CUR_FDB.execute("""
     MERGE INTO PT_CADPAT A
     USING (
@@ -286,56 +303,182 @@ def pt_movbem():
             A.CODIGO_BAI_PAT = B.CODIGO_BAI_MOV;""")
     commit()
 
+    # Atualiza setor de incorporação com base na primeira transferência
+    CUR_FDB.execute("""
+    MERGE INTO PT_CADPAT A
+    USING (
+        SELECT 
+            M1.CODIGO_PAT_MOV, 
+            M1.CODIGO_SET_MOV_ant
+        FROM PT_MOVBEM M1
+        WHERE M1.TIPO_MOV = 'T'
+        AND M1.DATA_MOV = (
+            SELECT MIN(M2.DATA_MOV)
+            FROM PT_MOVBEM M2
+            WHERE M2.CODIGO_PAT_MOV = M1.CODIGO_PAT_MOV
+                AND M2.TIPO_MOV = 'T'
+        )
+    ) B
+    ON (A.CODIGO_PAT = B.CODIGO_PAT_MOV) and B.CODIGO_SET_MOV_ANT IS NOT NULL
+    WHEN MATCHED THEN
+        UPDATE SET
+            A.CODIGO_SET_PAT = B.CODIGO_SET_MOV_ant;""")
+    commit()
+
+    # Atualiza setor atual com base na última transferencia
+    CUR_FDB.execute("""
+        MERGE INTO PT_CADPAT A
+    USING (
+        -- Seleciona a última movimentação para atualizar o setor atual
+        SELECT 
+            M1.CODIGO_PAT_MOV, 
+            M1.CODIGO_SET_MOV
+        FROM PT_MOVBEM M1
+        WHERE M1.TIPO_MOV = 'T'
+        AND M1.DATA_MOV = (
+            SELECT MAX(M2.DATA_MOV)
+            FROM PT_MOVBEM M2
+            WHERE M2.CODIGO_PAT_MOV = M1.CODIGO_PAT_MOV
+                AND M2.TIPO_MOV = 'T'
+        )
+    ) C
+    ON (A.CODIGO_PAT = C.CODIGO_PAT_MOV) AND C.CODIGO_SET_MOV IS NOT NULL
+    WHEN MATCHED THEN
+        UPDATE SET
+            A.CODIGO_SET_ATU_PAT = C.CODIGO_SET_MOV;
+    """)
+
+    # Atualiza setor na movimentação de aquisição
+    CUR_FDB.execute("""
+    MERGE INTO PT_MOVBEM A
+    USING (
+        SELECT CODIGO_PAT, CODIGO_SET_PAT
+        FROM PT_CADPAT
+    ) B
+    ON B.CODIGO_PAT = A.CODIGO_PAT_MOV and A.TIPO_MOV = 'A' and b.codigo_set_pat <> a.codigo_set_mov
+    WHEN MATCHED THEN
+        UPDATE SET
+            A.CODIGO_SET_MOV = b.CODIGO_SET_PAT;""")
+    commit()
+
+    # Atualiza a data de aquisição do cadastro
+    CUR_FDB.execute("""
+    MERGE INTO PT_CADPAT A
+    USING (
+        SELECT DATA_MOV, CODIGO_PAT_MOV, CODIGO_SET_MOV
+        FROM PT_MOVBEM
+        WHERE TIPO_MOV = 'A'
+    ) B
+    ON A.CODIGO_PAT = B.CODIGO_PAT_MOV
+    WHEN MATCHED THEN
+        UPDATE SET
+            A.datae_pat = B.DATA_MOV""")
+    commit()
+
+    # Preenche conta contábil no cadastro com base no tipo de bem
+    CUR_FDB.execute("""
+    MERGE
+    INTO
+        pt_cadpat a
+            USING (
+        SELECT
+            a.codigo_pat,
+            c.balco
+        FROM
+            PT_CADPAT a
+        JOIN PT_CADTIP b ON
+            a.CODIGO_TIP_PAT = b.codigo_tip
+        JOIN conpla_tce c ON
+            b.DESCRICAO_TIP = c.TITCO
+        WHERE
+            codigo_cpl_pat IS NULL) b
+    ON a.codigo_pat = b.codigo_pat 
+    WHEN MATCHED THEN UPDATE SET a.codigo_cpl_pat = b.balco
+    """)
+    commit()
+
+    # Atualiza a conta contábil nas movimentações
     CUR_FDB.execute("""
     MERGE INTO PT_MOVBEM A 
-    USING (SELECT CODIGO_CPL_PAT FROM PT_CADPAT) B 
+    USING (SELECT CODIGO_CPL_PAT, CODIGO_PAT FROM PT_CADPAT) B 
     ON A.CODIGO_PAT_MOV = B.CODIGO_PAT AND A.CODIGO_CPL_MOV IS NULL
     WHEN MATCHED THEN UPDATE SET A.CODIGO_CPL_MOV = B.CODIGO_CPL_PAT
     """)   
     commit()
 
-    CUR_FDB.execute(
-        """
-        insert
-            into
-            pt_movbem(codigo_mov,
-            empresa_mov,
-            codigo_pat_mov,
-            data_mov,
-            codigo_cpl_mov,
-            tipo_mov,
-            codigo_set_mov,
-            valor_mov,
-            dt_contabil)
+    max_codigomov = CUR_FDB.execute('SELECT max(codigo_mov) FROM pt_movbem').fetchone()[0]
+    CUR_FDB.execute(f'ALTER SEQUENCE gen_pt_movbem_id RESTART with {max_codigomov}')
+    commit()
+
+    CUR_FDB.execute("""
+    insert
+        into
+        pt_movbem(codigo_mov,
+        empresa_mov,
+        codigo_pat_mov,
+        data_mov,
+        codigo_cpl_mov,
+        tipo_mov,
+        codigo_set_mov,
+        valor_mov,
+        dt_contabil)
+    select
+        gen_id(gen_pt_movbem_id,1),
+        empresa_pat ,
+        codigo_pat,
+        dtlan_pat ,
+        '237110301',
+        'R',
+        codigo_set_atu_pat ,
+        0,
+        dtlan_pat
+    from
+        pt_cadpat p
+    where
+        p.dtpag_pat is null
+        and exists(
         select
-            gen_id(gen_pt_movbem_id,1),
-            empresa_pat ,
-            codigo_pat,
-            dtlan_pat ,
-            '237110301',
-            'R',
-            codigo_set_atu_pat ,
-            0,
-            dtlan_pat
+            1
         from
-            pt_cadpat p
+            pt_movbem m
         where
-            p.dtpag_pat is null
-            and exists(
-            select
-                1
-            from
-                pt_movbem m
-            where
-                m.codigo_pat_mov = p.codigo_pat
-                and m.depreciacao_mov = 'S') 
-            and not exists (
-            select
-                1
-            from
-                pt_movbem m
-            where
-                m.codigo_pat_mov = p.codigo_pat
-                and m.codigo_cpl_mov = '237110301')
-        """)
+            m.codigo_pat_mov = p.codigo_pat
+            and m.depreciacao_mov = 'S') 
+        and not exists (
+        select
+            1
+        from
+            pt_movbem m
+        where
+            m.codigo_pat_mov = p.codigo_pat
+            and m.codigo_cpl_mov = '237110301')
+    """)
+    commit()
+
+    CUR_FDB.execute("""
+    EXECUTE BLOCK AS
+    DECLARE VARIABLE CODIGO_MOV INTEGER;
+    DECLARE VARIABLE CODIGO_PAT_MOV INTEGER;
+    DECLARE VARIABLE CODIGO_SET_MOV INTEGER;
+    BEGIN
+        FOR SELECT CODIGO_MOV, CODIGO_PAT_MOV
+            FROM PT_MOVBEM
+            WHERE TIPO_MOV = 'R' AND DEPRECIACAO_MOV = 'N' AND COALESCE(CODIGO_SET_MOV, 0) = 0
+            INTO :CODIGO_MOV, :CODIGO_PAT_MOV
+        DO
+        BEGIN
+            -- Busca o CODIGO_SET_MOV da movimentação anterior (ou 0 se não existir)
+            SELECT COALESCE(CODIGO_SET_MOV, 0)
+            FROM PT_MOVBEM
+            WHERE CODIGO_MOV = :CODIGO_MOV - 1
+            AND CODIGO_PAT_MOV = :CODIGO_PAT_MOV
+            INTO :CODIGO_SET_MOV;
+
+            -- Atualiza a movimentação atual
+            UPDATE PT_MOVBEM
+            SET CODIGO_SET_MOV = :CODIGO_SET_MOV
+            WHERE CODIGO_MOV = :CODIGO_MOV;
+        END
+    END
+    """)
     commit()

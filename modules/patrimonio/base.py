@@ -1,10 +1,10 @@
-from connection import commit, CUR_FDB, CUR_SQLS, fetchallmap
+from connection import commit, CUR_FDB, fetchallmap
 from utils import EMPRESA, limpa_tabela
 
 def pt_cadtip():
-    limpa_tabela("cadtip")
+    limpa_tabela("pt_cadtip")
 
-    query = CUR_SQLS.execute("""
+    rows = fetchallmap("""
     select
             distinct
             cdClasseReduzido as cdClassificacao,
@@ -27,10 +27,8 @@ def pt_cadtip():
 
     insert = CUR_FDB.prep("insert into pt_cadtip(codigo_tip, empresa_tip, descricao_tip) values(?,?,?)")
 
-    rows = fetchallmap(query)
-
     for row in rows:
-        insert(row['cdClassificacao'], '01', row['dsClassificacao'])
+        CUR_FDB.execute(insert, (row['cdClassificacao'], EMPRESA, row['dsClassificacao']))
     commit()
 
 def pt_cadpatg():
@@ -41,20 +39,18 @@ def pt_cadpatg():
         (2, EMPRESA, 'Bens Imóveis'),
     )
 
-    CUR_SQLS.executemany("insert into pt_cadpatg(codigo_gru,empresa_gru,nogru_gru) values(?,?,?)", values)
+    CUR_FDB.executemany("insert into pt_cadpatg(codigo_gru,empresa_gru,nogru_gru) values(?,?,?)", (values))
 
     commit()
 
 def pt_cadsit():
     limpa_tabela("pt_cadsit")
 
-    query = CUR_SQLS.execute("select cdEstadoConser, dsEstadoConser from estadoconservacao")
+    rows = fetchallmap("select cdEstadoConser, dsEstadoConser from BORA_PATRI.dbo.estadoconservacao")
 
     insert = CUR_FDB.prep("insert into pt_cadsit(codigo_sit, empresa_sit, descricao_sit) values(?,?,?)")
 
-    rows = fetchallmap(query)
-
-    [insert(row['cdSituacao'], '01', row['dsSituacao']) for row in rows]
+    [CUR_FDB.execute(insert, ((row['cdEstadoConser'], EMPRESA, row['dsEstadoConser']))) for row in rows]
         
     commit()
 
@@ -62,19 +58,17 @@ def setores():
     limpa_tabela("pt_cadpats")
     limpa_tabela("pt_cadpatd")
     
-    query = CUR_SQLS.execute("""
-        select            
+    rows = fetchallmap("""
+        select distinct         
             cdlocalreduzido ,
             nrnivel ,
             localizacao.dslocalizacao
         from
-            localizacao
+            BORA_PATRI.dbo.localizacao
         where ininativa = 0
             order by
                 nrnivel
     """)
-
-    insert = CUR_FDB.prep("insert into pt_cadpats(codigo_set, empresa_set, descricao_set) values(?,?,?)")
 
     CUR_FDB.execute("insert into pt_cadpatd(codigo_des,empresa_des,nauni_des) select 1, empresa, clnt1 from cadcli")
     commit()
@@ -82,8 +76,13 @@ def setores():
     insert_subunidade = CUR_FDB.prep("insert into pt_cadpats(codigo_set,empresa_set,codigo_des_set, noset_set) values (?,?,?,?)")
 
     subunidades = []
+    cdlocalreduzido_set = set()
 
-    [subunidades.append((row['cdlocalreduzido'], EMPRESA, 1, row['dslocalizacao'])) for row in fetchallmap(query)]
+    for row in rows:
+        cdlocalreduzido = row['cdlocalreduzido']
+        if cdlocalreduzido not in cdlocalreduzido_set:
+            subunidades.append((cdlocalreduzido, EMPRESA, 1, row['dslocalizacao']))
+            cdlocalreduzido_set.add(cdlocalreduzido)
 
     CUR_FDB.executemany(insert_subunidade, subunidades)
     commit()
@@ -94,9 +93,9 @@ def pt_cadbai():
     CUR_FDB.execute("insert into pt_cadbai(codigo_bai, empresa_bai, descricao_bai) values (0,%d,'Diversos')" % EMPRESA)
     commit()
 
-    rows = fetchallmap(CUR_SQLS.execute("select cdBairro, dsBairro from bairro"))
+    rows = fetchallmap("select cdtpbaixa, dstpbaixa from BORA_PATRI.dbo.tipobaixa")
 
     insert = CUR_FDB.prep("insert into pt_cadbai(codigo_bai, empresa_bai, descricao_bai) values (?,?,?)")
 
-    [insert(row['cdBairro'], EMPRESA, row['dsBairro']) for row in rows]
+    [CUR_FDB.execute(insert, ((row['cdtpbaixa'], EMPRESA, row['dstpbaixa']))) for row in rows]
     commit()

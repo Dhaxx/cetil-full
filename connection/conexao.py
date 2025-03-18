@@ -2,20 +2,20 @@ import fdb
 import pyodbc
 import os
 from dotenv import load_dotenv
+import inspect
 
-load_dotenv()
+load_dotenv(dotenv_path='C:\\Conversao\\CETIL\\connection\\.env')
 
 def _conexoes():
+    global conexao_fdb
     try:
         conexao_fdb = fdb.connect(
             dsn=os.environ['FDB_DSN'],
             user=os.environ['FDB_USER'],
             password=os.environ['FDB_PWD'],
-            host=os.environ['FDB_HOST'],
             no_db_triggers=1,
             charset='WIN1252')
         
-        pyodbc.setDecimalSeparator(',')
         conexao_sqls = pyodbc.connect(
             "DRIVER={SQL Server};"
             f"SERVER={os.environ['SQLS_SRVR']};"
@@ -32,13 +32,15 @@ def _conexoes():
         print("Erro ao estabelecer conexão: ", e)
         return None, None
 
-def commit(cnx_fdb):
+def commit():
+    global conexao_fdb
     try:
-        cnx_fdb.commit()
-        print('Commited')
+        function_name = inspect.currentframe().f_back.f_code.co_name
+        conexao_fdb.commit()
+        print(f'{function_name} Commited') if function_name != 'limpa_tabela' else ...
     except Exception as e:
         print("Erro ao commitar: ", e)
-        cnx_fdb.rollback()
+        conexao_fdb.rollback()
 
 def _cursors(cnx_fdb, cnx_sqls):
     try:

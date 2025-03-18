@@ -1,1 +1,1 @@
-from .conexao import commit, CUR_FDB, CUR_SQLS, fetchallmap
+from .conexao import commit, CUR_FDB, fetchallmap
