@@ -1,10 +1,10 @@
-from connection import commit, CUR_FDB, fetchallmap
-from utils import limpa_tabela, EMPRESA, dict_produtos, dict_fornecedores
+from connection import commit, CUR_FDB, fetchallmap, ENTIDADE
+from utils import limpa_tabela, EMPRESA, dict_produtos, dict_fornecedores, cria_campo, obter_codif_por_nome, obter_codif_por_codant
 
 def itens():
-    limpa_tabela(('icadorc', 'cadorc'))
+    limpa_tabela('vcadorc', 'fcadorc', 'icadorc', 'cadorc')
 
-    query = """
+    query = f"""
     select
         p.nrpesquisa,
         p.dtanopesquisa,
@@ -25,21 +25,21 @@ def itens():
         select
             max(lote)
         from
-            itempesquisa c
+            {ENTIDADE}_COMPRAS.dbo.itempesquisa c
         where
             c.dtanopesquisa = p.dtanopesquisa
             and c.nrpesquisa = p.nrpesquisa) as qtdlote,
         o.cdOrgaoReduzido
     from
-        processopesquisa p
-    inner join itempesquisa i on
+        {ENTIDADE}_COMPRAS.dbo.processopesquisa p
+    left join {ENTIDADE}_COMPRAS.dbo.itempesquisa i on
         i.dtanopesquisa = p.dtanopesquisa
         and i.nrpesquisa = p.nrpesquisa
-    left join condicaopagamento f on
+    left join {ENTIDADE}_COMPRAS.dbo.condicaopagamento f on
         f.cdcondicaopagamento = p.cdcondicaopagamento
-    left join localentrega l on
+    left join {ENTIDADE}_COMPRAS.dbo.localentrega l on
         l.cdlocalentrega = p.cdlocalentrega
-    left join orgaopesquisa o on
+    left join {ENTIDADE}_COMPRAS.dbo.orgaopesquisa o on
         o.dtAnoPesquisa = p.dtAnoPesquisa
         and o.nrPesquisa = p.nrPesquisa
     """
@@ -53,9 +53,11 @@ def itens():
         cast(qr.dspesquisa as nvarchar(max)) dspesquisa,
         qr.justificativa_contratacao,
         qr.cdOrgaoReduzido,
-        qr.nrpesquisa,
+        concat(qr.nrpesquisa,substring(cast(dtanopesquisa as varchar),3,2)) nrpesquisa,
         right(replicate('0',6)+cast(qr.nrprocesso as varchar),6)+'/'+cast(coalesce(dtanoprocesso,0) % 2000 as varchar) proclic,
-        concat(qr.nrprocesso, qr.dtanoprocesso%2000)
+        concat(qr.nrprocesso, qr.dtanoprocesso%2000) numlic,
+        cast(dscondicaopagamento as nvarchar(max)) dscondicaopagamento,
+        local
     from ({query}) as qr
     """)
 
@@ -84,18 +86,17 @@ def itens():
     """)
 
     itens = fetchallmap(f"""
-    select
-        distinct
-        right(replicate('0',
-        5)+ cast(nrpesquisa as varchar),
-        5)+ '/' + cast(dtanopesquisa % 2000 as varchar) numorc,
+    SELECT
+        DISTINCT
+        RIGHT(REPLICATE('0', 5) + CAST(nrpesquisa AS VARCHAR(5)), 5) + '/' + CAST(dtanopesquisa % 2000 AS VARCHAR(4)) AS numorc,
         qr.nritem,
         qr.qtdlote,
         qr.lote,
         qr.qtitempesquisa,
         qr.cdmaterial,
         qr.cdOrgaoReduzido,
-        qr.nrpesquisa from ({query})
+        concat(qr.nrpesquisa,substring(cast(dtanopesquisa as varchar),3,2)) nrpesquisa from ({query}) as qr
+        where qr.cdmaterial <> 0
     """)
 
     insert_itens = CUR_FDB.prep("""
@@ -112,23 +113,22 @@ def itens():
     values(?,?,?,?,?,?,?,?)
     """)
 
-    cotacao_atual = 0
+    cotacao_anterior = 0
 
     for cabecalho in cabecalhos:
-        if cabecalho['nrpesquisa'] == cotacao_anterior:
-            cotacao_atual = cabecalho['nrpesquisa']
+        if cabecalho['nrpesquisa'] != cotacao_anterior:
             numorc = cabecalho['numorc']
             num = cabecalho['num']
             ano = cabecalho['dtanopesquisa']
             dtorc = cabecalho['dtexpedicao']
             descr = cabecalho['dspesquisa'].title()
-            obs = cabecalho['justificativa_contratacao'].capitalize()
-            codccusto = cabecalho['cdOrgaoReduzido']
+            obs = cabecalho['justificativa_contratacao'].capitalize() if cabecalho['justificativa_contratacao'] else None
+            codccusto = 0
             status = 'EC'
             liberado = 'S'
             idcadorc = cabecalho['nrpesquisa']
             empresa = EMPRESA
-            if numlic != 0:
+            if cabecalho['numlic'] != 0:
                 proclic = cabecalho['proclic']
                 numlic = cabecalho['numlic']
             else:
@@ -138,8 +138,7 @@ def itens():
             condpgto = cabecalho['dscondicaopagamento'][:30]
             local = cabecalho['local'][:60]
 
-            CUR_FDB.execute(insert, (cotacao_atual
-            , numorc
+            CUR_FDB.execute(insert, (numorc
             , num
             , ano
             , dtorc
@@ -152,8 +151,6 @@ def itens():
             , empresa
             , proclic
             , numlic
-            , proclic
-            , numlic
             , registropreco
             , condpgto
             , local))
@@ -162,35 +159,38 @@ def itens():
     commit()
 
     for item in itens:
-        nritem = item.nritem if item.qtdlote == 1 else str(item.lote) + str(item.nritem) 
+        nritem = item['nritem'] if item['qtdlote'] == 1 else str(item['lote']) + str(item['nritem']) 
 
-        if item.lote > 9 or item.nritem > 99:
-            nritem = str(item.lote)  + '0' + str(item.nritem)
+        if item['lote'] > 9 or item['nritem'] > 99:
+            nritem = str(item['lote'])  + '0' + str(item['nritem'])
         
         itemorc = nritem
         valor = 0
-        cadpro = dict_produtos[item['cdmaterial']]
+        cadpro = dict_produtos[str(item['cdmaterial'])]
         numorc = item['numorc']
         codccusto = item['cdOrgaoReduzido']
         qtd = item['qtitempesquisa']
         idcadorc = item['nrpesquisa']
 
-        CUR_FDB.execute(insert, (numorc, nritem, itemorc, valor, codccusto, cadpro, qtd, idcadorc))
+        CUR_FDB.execute(insert_itens, (numorc, nritem, itemorc, valor, codccusto, cadpro, qtd, idcadorc))
     commit()
 
 def fcadorc():
     limpa_tabela('fcadorc')
+    cria_campo('fcadorc', 'insmf_ant')
 
-    rows = fetchallmap("""
+    rows = fetchallmap(f"""
     select
-        distinct nrpesquisa,
+        distinct
+        right(replicate('0', 5)+cast(nrpesquisa as varchar),5)+'/'+cast(dtanopesquisa % 2000 as varchar) numorc,
+        concat(nrpesquisa,substring(cast(dtanopesquisa as varchar),3,2)) nrpesquisa,
         dtanopesquisa,
         p.cdfornecedor,
         f.nmfornecedor,
-        f.nrcgccpf
+        trim(CAST(CAST(nrcgccpf AS DECIMAL(14,0)) AS CHAR(14))) insmf
     from
-        propostapesquisa p
-    inner join fornecedor f on
+        {ENTIDADE}_COMPRAS.dbo.propostapesquisa p
+    inner join {ENTIDADE}_ALMOX.dbo.fornecedor f on
         f.cdfornecedor = p.cdfornecedor
     where
         nrpesquisa > 0
@@ -198,25 +198,39 @@ def fcadorc():
         nrpesquisa
     """)
 
-    insert = CUR_FDB.prep("insert into fcadorc(numorc,codif,nome,valorc,id_cadorc) values(?,?,?,?,?)")
+    insert = CUR_FDB.prep("insert into fcadorc(numorc,codif,nome,valorc,id_cadorc,insmf_ant) values(?,?,?,?,?,?)")
+
+    fornecedores_nao_identificados = set()
 
     for row in rows:
         numorc = row['numorc']
-        codif = dict_fornecedores[row['cdfornecedor']]
+        insmf = row['insmf']
+
+        if (len(insmf) > 11 and  len(insmf) < 14):
+            insmf = insmf.zfill(14)
+        elif len(insmf) < 11:
+            insmf = insmf.zfill(11)
+
+        codif = dict_fornecedores.get(insmf, 0)
+        if codif == 0:
+            codif = obter_codif_por_nome(row['nmfornecedor'])
+        else:
+            codif = codif['codif']
+
         nome = row['nmfornecedor'][:70].title()
         valorc = 0
         id_cadorc = row['nrpesquisa']
 
-        CUR_FDB.execute(insert, (numorc, codif, nome, valorc, id_cadorc))
+        CUR_FDB.execute(insert, (numorc, codif, nome, valorc, id_cadorc, insmf))
     commit()
 
 def vcadorc():
     limpa_tabela('vcadorc')
 
-    rows = fetchallmap("""
+    rows = fetchallmap(f"""
     select
-        nrpesquisa,
-        dtanopesquisa,
+        right(replicate('0', 5)+cast(nrpesquisa as varchar),5)+'/'+cast(dtanopesquisa % 2000 as varchar) numorc,
+        concat(nrpesquisa,substring(cast(dtanopesquisa as varchar),3,2)) nrpesquisa,
         p.cdfornecedor,
         lote,
         nritemproposta,
@@ -227,7 +241,7 @@ def vcadorc():
         select
             top 1 g.cdfornecedor
         from
-            propostapesquisa g
+            {ENTIDADE}_COMPRAS.dbo.propostapesquisa g
         where
             g.nrpesquisa = p.nrpesquisa
             and g.dtanopesquisa = p.dtanopesquisa
@@ -239,7 +253,7 @@ def vcadorc():
         select
             top 1 g.vlcotacaoproposta
         from
-            propostapesquisa g
+            {ENTIDADE}_COMPRAS.dbo.propostapesquisa g
         where
             g.nrpesquisa = p.nrpesquisa
             and g.dtanopesquisa = p.dtanopesquisa
@@ -248,18 +262,18 @@ def vcadorc():
             and g.vlcotacaoproposta > 0
             order by g.vlcotacaoproposta ) as valorvencedor,
         f.nmfornecedor,
-        f.nrcgccpf,
+        trim(CAST(CAST(f.nrcgccpf AS DECIMAL(14,0)) AS CHAR(14))) insmf,
         (
         select
-            max(lote)
+            coalesce(max(lote),1)
         from
-            itempesquisa c
+            {ENTIDADE}_COMPRAS.dbo.propostapesquisa c
         where
             c.dtanopesquisa = p.dtanopesquisa
             and c.nrpesquisa = p.nrpesquisa) as qtdlote
     from
-        propostapesquisa p
-    inner join fornecedor f on
+        {ENTIDADE}_COMPRAS.dbo.propostapesquisa p
+    inner join {ENTIDADE}_ALMOX.dbo.fornecedor f on
         f.cdfornecedor = p.cdfornecedor
     where
         nrpesquisa > 0 
@@ -268,8 +282,19 @@ def vcadorc():
     insert = CUR_FDB.prep("insert into vcadorc(numorc,codif,vlruni,vlrtot,item,id_cadorc,classe,ganhou,vlrganhou) values(?,?,?,?,?,?,?,?,?)")
 
     for row in rows:
-        numorc = f'{row.nrpesquisa:05}' + '/' + str(row.dtanopesquisa)[2:4]
-        codif = dict_fornecedores(row['cdfornecedor'])
+        numorc = row['numorc']
+        insmf = row['insmf']
+
+        if (len(insmf) > 11 and  len(insmf) < 14):
+            insmf = insmf.zfill(14)
+        elif len(insmf) < 11:
+            insmf = insmf.zfill(11)
+
+        if insmf in dict_fornecedores:
+            codif = dict_fornecedores[insmf]['codif']
+        else:
+            codif = obter_codif_por_nome(row['nmfornecedor'])
+
         vlruni = row['vlcotacaoproposta']
         vlrtot = row['vlcotacaoproposta'] * row['qtitemproposta']
         item = row['nritemproposta']
@@ -282,7 +307,7 @@ def vcadorc():
 
         id_cadorc = row['nrpesquisa']
         classe = 'GL'
-        ganhou = dict_fornecedores(row['ganhador'])
+        ganhou = obter_codif_por_codant(row['ganhador'])
         vlrganhou = row['valorvencedor']
 
         CUR_FDB.execute(insert, (numorc, codif, vlruni, vlrtot, item, id_cadorc, classe, ganhou, vlrganhou))

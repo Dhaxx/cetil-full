@@ -5,7 +5,7 @@ def pedidos():
     pass
 
 def autorizacao():
-    rows = fetchallmap("""
+    rows = fetchallmap(f"""
     select
         l.nrinstrumentocontratual,
         l.dtanoinstrumentocontratual,
@@ -38,17 +38,17 @@ def autorizacao():
             else 'N'
         end as maisdeumlote
     from
-        instrumentocontratual l
-    inner join iteminstrumentocontratual i on
+        {ENTIDADE}_COMPRAS.dbo.instrumentocontratual l
+    inner join {ENTIDADE}_COMPRAS.dbo.iteminstrumentocontratual i on
         l.nrinstrumentocontratual = i.nrinstrumentocontratual
         and l.dtanoinstrumentocontratual = i.dtanoinstrumentocontratual
         and l.tpinstrumentocontratual = i.tpinstrumentocontratual
-    inner join instrumento_contratual_empenho e on
+    inner join {ENTIDADE}_COMPRAS.dbo.instrumento_contratual_empenho e on
         e.nr_instrumento_contratual = l.nrinstrumentocontratual
         and e.dt_ano_instrumento_contratual = l.dtanoinstrumentocontratual
         and e.tp_instrumento_contratual = l.tpinstrumentocontratual
         and i.fk_instrumento_contratual_empenho = e.pkid
-    left join localentrega z on
+    left join {ENTIDADE}_COMPRAS.dbo.localentrega z on
         z.cdlocalentrega = l.cdlocalentrega
     where
         e.nr_empenho <> 0
@@ -115,7 +115,7 @@ def autorizacao():
     pedido_atual = ""
     
     for row in rows:
-        numero_composto = f'{row['nrinstrumentocontratual']}-{row['dtanoinstrumentocontratual']}-{row['tpinstrumentocontratual']}-{row['nr_empenho']}'
+        numero_composto = f'{row['nrinstrumentocontratual']}_{row['dtanoinstrumentocontratual']}_{row['tpinstrumentocontratual']}_{row['nr_empenho']}'
         codccusto = None
         if numero_composto != pedido_atual:
             pedido_atual = numero_composto

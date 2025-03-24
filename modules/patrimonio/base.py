@@ -1,16 +1,16 @@
-from connection import commit, CUR_FDB, fetchallmap
+from connection import commit, CUR_FDB, fetchallmap, ENTIDADE
 from utils import EMPRESA, limpa_tabela
 
 def pt_cadtip():
     limpa_tabela("pt_cadtip")
 
-    rows = fetchallmap("""
+    rows = fetchallmap(f"""
     select
             distinct
             cdClasseReduzido as cdClassificacao,
             dsClassificacao
         from
-            BORA_PATRI.dbo.classificacao c
+            {ENTIDADE}_PATRI.dbo.classificacao c
         where
             (nrNivel >= 2
             or (nrnivel = 1
@@ -18,7 +18,7 @@ def pt_cadtip():
             select
                 1
             from
-                BORA_PATRI.dbo.item i
+                {ENTIDADE}_PATRI.dbo.item i
             where
                 i.cdclassificacao = c.cdclassereduzido)))
         order by
@@ -46,7 +46,7 @@ def pt_cadpatg():
 def pt_cadsit():
     limpa_tabela("pt_cadsit")
 
-    rows = fetchallmap("select cdEstadoConser, dsEstadoConser from BORA_PATRI.dbo.estadoconservacao")
+    rows = fetchallmap(f"select cdEstadoConser, dsEstadoConser from {ENTIDADE}_PATRI.dbo.estadoconservacao")
 
     insert = CUR_FDB.prep("insert into pt_cadsit(codigo_sit, empresa_sit, descricao_sit) values(?,?,?)")
 
@@ -58,13 +58,13 @@ def setores():
     limpa_tabela("pt_cadpats")
     limpa_tabela("pt_cadpatd")
     
-    rows = fetchallmap("""
+    rows = fetchallmap(f"""
         select distinct         
             cdlocalreduzido ,
             nrnivel ,
             localizacao.dslocalizacao
         from
-            BORA_PATRI.dbo.localizacao
+            {ENTIDADE}_PATRI.dbo.localizacao
         where ininativa = 0
             order by
                 nrnivel
@@ -93,7 +93,7 @@ def pt_cadbai():
     CUR_FDB.execute("insert into pt_cadbai(codigo_bai, empresa_bai, descricao_bai) values (0,%d,'Diversos')" % EMPRESA)
     commit()
 
-    rows = fetchallmap("select cdtpbaixa, dstpbaixa from BORA_PATRI.dbo.tipobaixa")
+    rows = fetchallmap(f"select cdtpbaixa, dstpbaixa from {ENTIDADE}_PATRI.dbo.tipobaixa")
 
     insert = CUR_FDB.prep("insert into pt_cadbai(codigo_bai, empresa_bai, descricao_bai) values (?,?,?)")
 

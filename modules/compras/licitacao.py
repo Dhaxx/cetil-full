@@ -1,4 +1,4 @@
-from connection import commit, CUR_FDB, fetchallmap
+from connection import commit, CUR_FDB, fetchallmap, ENTIDADE
 from utils import limpa_tabela, EMPRESA, dict_produtos, dict_fornecedores
 
 def cadlic():
@@ -56,7 +56,7 @@ def cadlic():
         '420': {"modalidade": "TOMADA DE PREÇOS", "sigla": "TP", "indice": 3}, # Tomada de preços,
     }
 
-    rows = fetchallmap("""
+    rows = fetchallmap(f"""
     select 
 		Concat(nrProcesso, dtAnoProcesso%2000) numlic,
 		Concat(format(nrProcesso, '000000'), dtAnoProcesso%2000) proclic,
@@ -80,8 +80,8 @@ def cadlic():
 		Concat(cdTipoProcesso,cdtipoModalidade,inPregaoEletronico) tipo_processo,
 		dacondicaopagamento
     from
-        processolicitatorio
-    left join dbo.condicaopagamento on
+        {ENTIDADE}_COMPRAS.dbo.processolicitatorio
+    left join {ENTIDADE}_COMPRAS.dbo.condicaopagamento on
         condicaopagamento.cdcondicaopagamento = processolicitatorio.cdcondicaopagamento
     order by
         dtanoprocesso,
@@ -138,15 +138,15 @@ def cadlic():
 def cadlotelic():
     limpa_tabela('cadlotelic')
 
-    rows = fetchallmap("""
+    rows = fetchallmap(f"""
     select
         a.dtanoprocesso,
         a.nrprocesso,
         lote,
         nmlote
     from
-        dbo.itemobjeto a
-        join processolicitatorio p on p.dtanoprocesso = a.dtanoprocesso 
+        {ENTIDADE}_COMPRAS.dbo.itemobjeto a
+        join {ENTIDADE}_COMPRAS.dbo.processolicitatorio p on p.dtanoprocesso = a.dtanoprocesso 
         and p.nrprocesso  = a.nrprocesso and p.cdtipoprocesso  = a.cdtipoprocesso
     where lote > 0
     group by
@@ -181,7 +181,7 @@ def cadprolic():
     limpa_tabela('cadprolic_detalhe')
     limpa_tabela('cadprolic')
 
-    rows = fetchallmap("""
+    rows = fetchallmap(f"""
     select
         b.cdOrgaoReduzido,
         a.dtanoprocesso,
@@ -196,7 +196,7 @@ def cadprolic():
             select
                 1
             from
-                itemobjeto b
+                {ENTIDADE}_COMPRAS.dbo.itemobjeto b
             where
                 a.dtanoprocesso = b.dtanoprocesso
                 and a.nrprocesso = b.nrprocesso
@@ -208,7 +208,7 @@ def cadprolic():
         select
             count(*)
         from
-            itemobjeto d
+            {ENTIDADE}_COMPRAS.dbo.itemobjeto d
         where
             d.nrprocesso = a.nrprocesso
             and d.dtanoprocesso = a.dtanoprocesso
@@ -217,8 +217,8 @@ def cadprolic():
             and a.cdmaterial = d.cdmaterial
             and d.vlcotacaoitem <> a.vlcotacaoitem) as duplicado
     from
-        dbo.itemobjeto a
-    join processolicitatorio p on
+        {ENTIDADE}_COMPRAS.dbo.itemobjeto a
+    join {ENTIDADE}_COMPRAS.dbo.processolicitatorio p on
         p.dtanoprocesso = a.dtanoprocesso
         and p.nrprocesso = a.nrprocesso
         and p.cdtipoprocesso = a.cdtipoprocesso
@@ -257,22 +257,22 @@ def cadprolic():
                 select
                     max(lote)
                 from
-                    itempesquisa c
+                    {ENTIDADE}_COMPRAS.dbo.itempesquisa c
                 where
                     c.dtanopesquisa = p.dtanopesquisa
                     and c.nrpesquisa = p.nrpesquisa) as qtdlote,
                 o.cdOrgaoReduzido,
                 p.cdTipoProcesso
             from
-                processopesquisa p
-            inner join itempesquisa i on
+                {ENTIDADE}_COMPRAS.dbo.processopesquisa p
+            inner join {ENTIDADE}_COMPRAS.dbo.itempesquisa i on
                 i.dtanopesquisa = p.dtanopesquisa
                 and i.nrpesquisa = p.nrpesquisa
-            left join condicaopagamento f on
+            left join {ENTIDADE}_COMPRAS.dbo.condicaopagamento f on
                 f.cdcondicaopagamento = p.cdcondicaopagamento
-            left join localentrega l on
+            left join {ENTIDADE}_COMPRAS.dbo.localentrega l on
                 l.cdlocalentrega = p.cdlocalentrega
-            left join orgaopesquisa o on
+            left join {ENTIDADE}_COMPRAS.dbo.orgaopesquisa o on
                 o.dtAnoPesquisa = p.dtAnoPesquisa
                 and o.nrPesquisa = p.nrPesquisa) as qr) b on
         a.nrprocesso = b.nrprocesso
@@ -470,6 +470,6 @@ def proposta():
     ) values(?,?,?,?,?,?,?,
     ?,?,?,?,?,?,?,?,?)""")
     
-    rows = fetchallmap("""
+    rows = fetchallmap(f"""
     
     """)

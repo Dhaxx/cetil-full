@@ -1,10 +1,10 @@
-from connection import commit, CUR_FDB, fetchallmap
+from connection import commit, CUR_FDB, fetchallmap, ENTIDADE
 from utils import EMPRESA, limpa_tabela, cria_campo
 
 def pt_cadpat():
     limpa_tabela('pt_cadpat')
 
-    query = """
+    query = f"""
     select distinct item.cditem,
 	case
 		when item.nrplaca = '' then cast(item.cditem as varchar)
@@ -39,16 +39,16 @@ def pt_cadpat():
 		else 1
 	end as grupo
     from
-        BORA_PATRI.dbo.item
-    inner join BORA_PATRI.dbo.localizacao on
+        {ENTIDADE}_PATRI.dbo.item
+    inner join {ENTIDADE}_PATRI.dbo.localizacao on
         item.cdlocalizacao = localizacao.cdlocalreduzido
-    inner join BORA_PATRI.dbo.classificacao on
+    inner join {ENTIDADE}_PATRI.dbo.classificacao on
         item.cdclassificacao = classificacao.cdclassereduzido
-    inner join BORA_PATRI.dbo.estadoconservacao on
+    inner join {ENTIDADE}_PATRI.dbo.estadoconservacao on
         item.cdestadoconser = estadoconservacao.cdestadoconser
-    left join BORA_PPA.dbo.ppaplanoconta c on
+    left join {ENTIDADE}_PPA.dbo.ppaplanoconta c on
         c.cdcontacontabil = item.cdcontabil
-    left join BORA_PATRI.dbo.itemempenhos on
+    left join {ENTIDADE}_PATRI.dbo.itemempenhos on
         item.cditem = itemempenhos.cditem
     order by
         item.cditem"""
@@ -131,7 +131,7 @@ def pt_movbem():
     limpa_tabela('pt_movbem')
     cria_campo('pt_movbem', 'codigo_set_mov_ant')
 
-    rows = fetchallmap("""
+    rows = fetchallmap(f"""
     select
         case intipomovimento when 'B' then 'B'
             when 'T' then 'T'
@@ -159,8 +159,8 @@ def pt_movbem():
             chmovimento,
             'N' depreciacao
         from
-            BORA_PATRI.dbo.movimento m
-        left join BORA_PATRI.dbo.motivo v on
+            {ENTIDADE}_PATRI.dbo.movimento m
+        left join {ENTIDADE}_PATRI.dbo.motivo v on
             v.cdmotivo = m.cdmotivo
         where
             inestorno > -1
@@ -181,14 +181,14 @@ def pt_movbem():
             99999999,
             'S' depreciacao
         from
-            BORA_PATRI.dbo.movimentodepreciacao md
+            {ENTIDADE}_PATRI.dbo.movimentodepreciacao md
         where
             inestorno > -1
             and not exists(
             select
                 1
             from
-                BORA_PATRI.dbo.movimentodepreciacao mc
+                {ENTIDADE}_PATRI.dbo.movimentodepreciacao mc
             where
                 mc.cditem = md.cditem
                 and mc.dtestorno = md.dtmovimento
@@ -210,9 +210,9 @@ def pt_movbem():
             99999999,
             'N'
         from
-            BORA_PATRI.dbo.movimentovlcomplementar c
+            {ENTIDADE}_PATRI.dbo.movimentovlcomplementar c
         where
-            inestorno > -1 and exists(select 1 from BORA_PATRI.dbo.item i where i.cditem = c.cditem)) as movimentacao
+            inestorno > -1 and exists(select 1 from {ENTIDADE}_PATRI.dbo.item i where i.cditem = c.cditem)) as movimentacao
     order by
         cditem,
         dtmovimento ,

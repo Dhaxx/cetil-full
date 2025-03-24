@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 import inspect
 
 load_dotenv(dotenv_path='C:\\Conversao\\CETIL\\connection\\.env')
+ENTIDADE = os.environ['ENTIDADE'].upper()
 
 def _conexoes():
     global conexao_fdb

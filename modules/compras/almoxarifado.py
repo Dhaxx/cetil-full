@@ -88,7 +88,7 @@ def saldo_inicial():
                     NRLANCAMENTO desc,
                     DTMOVIMENTO desc) as valor
         from
-            PRODUTO P
+            {ENTIDADE}_ALMOX.dbo.PRODUTO P
         where
             p.tpmaterial <> 2) as q
     where
@@ -172,7 +172,7 @@ def movimento():
         dtemissao,
         cdorgaoreduzido
     from
-        CM_CETIL.dbo.movimento
+        {ENTIDADE}_COMPRAS.dbo.movimento
     where
         year(dtmovimento) = 2025
         and cdoperacao > 0
@@ -190,7 +190,7 @@ def movimento():
         if row['operacao'] == 'X':
             exit('Operação inválida')
 
-        requisicao_composta = str(row.dtmovimento) + '-' + str(row.nrdocumento) + '-' + str(row.cdoperacao)
+        requisicao_composta = str(row['dtmovimento']) + '-' + str(row['nrdocumento']) + '-' + str(row['cdoperacao'])
 
         if requi_atual != requisicao_composta:
             requi_atual = requisicao_composta
