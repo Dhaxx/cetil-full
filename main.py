@@ -10,10 +10,17 @@ def main():
     # compras.base.centro_custo()
     # compras.base.fornecedores()
 
-    compras.cotacao.itens()
+    # compras.cotacao.itens()
     utils.armazena_fornecedores()
-    compras.cotacao.fcadorc()
-    compras.cotacao.vcadorc()
+    # compras.cotacao.fcadorc()
+    # compras.cotacao.vcadorc()
+
+    # compras.licitacao.cadlic()
+    # compras.licitacao.cadlotelic()
+    # compras.licitacao.prolic_prolics()
+    # compras.licitacao.cadprolic()
+    compras.licitacao.proposta()
+
 
     # patrimonio.limpa_patrimonio()
     # patrimonio.pt_cadtip()
