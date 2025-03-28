@@ -137,17 +137,17 @@ def centro_custo():
 
     rows = fetchallmap(f"""WITH CTE AS (
         SELECT
-            cdlocalreduzido,
-            dslocalizacao,
-            dsresponsavel,
-            ROW_NUMBER() OVER (PARTITION BY cdlocalreduzido ORDER BY (SELECT NULL)) AS rn
+            cdOrgaoReduzido,
+            NaOrgao,
+            NmOrgao,
+            ROW_NUMBER() OVER (PARTITION BY cdOrgaoReduzido ORDER BY (SELECT NULL)) AS rn
         FROM
-            {ENTIDADE}_ALMOX.dbo.localizacao
+            {ENTIDADE}_COMPRAS.dbo.ORGAO
     )
     SELECT
-        cdlocalreduzido,
-        dslocalizacao,
-        dsresponsavel
+        cdOrgaoReduzido,
+        NaOrgao,
+        NmOrgao
     FROM
         CTE
     WHERE
@@ -158,7 +158,7 @@ def centro_custo():
         'Conversão',
         ''
     FROM
-        {ENTIDADE}_ALMOX.dbo.localizacao;""")
+        {ENTIDADE}_COMPRAS.dbo.ORGAO;""")
 
     local = CUR_FDB.execute("select first 1 poder, orgao, unidade from desorc where empresa = (select empresa from cadcli)").fetchonemap()
 
@@ -168,8 +168,8 @@ def centro_custo():
         unidade = local['unidade']
         destino = '000000001'
         ccusto = "001"
-        descr = row['dslocalizacao'].title()
-        codccusto = row['cdlocalreduzido']
+        descr = row['NaOrgao'].title()
+        codccusto = row['cdOrgaoReduzido']
         empresa = EMPRESA
         ocultar = "N"
 

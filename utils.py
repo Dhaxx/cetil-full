@@ -63,3 +63,44 @@ def obter_codif_por_codant(codant):
         if dados.get("codant") == str(codant):
             return dict_fornecedores[insmf]['codif']  # Retorna a primeira chave encontrada
     return None  # Retorna None se não encontrar
+
+def limpa_tabelas_compras():
+    tabelas = [
+        "licitcomiss",
+        "regpreco_saldo_ant",
+        "regpreco",
+        "regprecohis",
+        "regprecodoc",
+        "cadpro",
+        "cadpro_final",
+        "cadpro_lance",
+        "cadpro_proposta",
+        "cadpro_status",
+        "cadprolic_detalhe",
+        "cadprolic",
+        "prolic",
+        "prolics",
+        "cadlotelic",
+        "cadlic_sessao",
+        "cadlic",
+        "membros",
+        "comissao",
+        "icadorc",
+        "cadorc",
+        "icadped",
+        "fcadped",
+        "cadped",
+        "icadreq",
+        "requi",
+        "cadlote",
+        "cadest",
+        "cadsubgr",
+        "cadgrupo",
+        "centrocusto",
+        "destino",
+        "cadunimedida"
+    ]
+
+    for tabela in tabelas:
+        limpa_tabela(tabela)
+    commit()
