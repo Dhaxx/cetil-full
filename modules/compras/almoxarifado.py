@@ -1,7 +1,8 @@
-from connection import commit, CUR_FDB, fetchallmap
-from utils import limpa_tabela, EMPRESA, dict_produtos, dict_fornecedores
+from connection import commit, CUR_FDB, fetchallmap, ENTIDADE
+from utils import limpa_tabela, EMPRESA, dict_produtos, dict_fornecedores, obter_codif_por_codant
+exercicio = CUR_FDB.execute("select mexer from cadcli").fetchone()[0]
 
-requi = CUR_FDB.prep("""
+insert_requi = CUR_FDB.prep("""
 insert
     into
     requi(
@@ -24,14 +25,18 @@ insert
         , docum
         , responsa 
         , recebe 
+        , dtemissaonf 
+        , entr_said 
+        , nfe_serie 
+        , nfe_danfe
     )
-values (?,gen_id(id_requi,1),?,?,?,
-        ?,?,?,?,?,
+values (?,?,?,?,?,
         ?,?,?,?,?,?,
-        ?,?,?)
+        ?,?,?,?,?,?,
+        ?,?,?,?,?,?)
 """)
 
-icadreq = CUR_FDB.prep("""
+insert_icadreq = CUR_FDB.prep("""
 insert
     into
     icadreq(
@@ -50,14 +55,16 @@ insert
         , codccusto
         , destino                
     )
-values (?,gen_id(id_requi),?,?,?,
+values (?,?,?,?,?,
         ?,?,?,?,?,
         ?,?,?,?)""")
 
 def saldo_inicial():
-    limpa_tabela(('icadreq where requi = 00000/25','requi where requi = 00000/25'))
+    limpa_tabela("icadreq where requi = '00000/25","requi where requi = '00000/25'")
 
-    rows = fetchallmap("""
+    id_requi = CUR_FDB.execute("select coalesce(max(id_requi),0) from requi").fetchone()[0]
+
+    rows = fetchallmap(f"""
     select
         *
     from
@@ -68,21 +75,21 @@ def saldo_inicial():
             select
                 sum(m.qtdeentrada - m.qtdesaida)
             from
-                MOVIMENTO M
+                {ENTIDADE}_ALMOX.dbo.MOVIMENTO M
             where
                 m.CDMATERIAL = p.cdmaterial
                 and m.cdoperacao <> 12
-                and year(DTMOVIMENTO) < 2025 
+                and year(DTMOVIMENTO) < {exercicio} 
             ) as quantidade,
             (
             select
                 top 1 
             sldvalor
             from
-                MOVIMENTO M
+                {ENTIDADE}_ALMOX.dbo.MOVIMENTO M
             where
                 m.CDMATERIAL = p.cdmaterial
-                and year(DTMOVIMENTO) < 2025
+                and year(DTMOVIMENTO) < {exercicio}
                     and m.cdoperacao <> 12
                 order by
                     NRLANCAMENTO desc,
@@ -105,8 +112,9 @@ def saldo_inicial():
 
     for row in rows:
         if mudou_requi:
+            id_requi += 1
             num = '00000'
-            ano = 2025
+            ano = exercicio
             dtlan = '31.12.2024'
             datae = dtlan
             dtpag = None
@@ -121,13 +129,15 @@ def saldo_inicial():
             docum = None
             responsa = None
             recebe = None
+            requi = f'{num}/{str(int(exercicio)-1)[2:]}'
 
-            CUR_FDB.execute(requi, (EMPRESA, requi, num, ano, 
+            CUR_FDB.execute(insert_requi, (EMPRESA, id_requi, requi, num, ano, 
                                 dtlan, datae, dtpag, entr, said, comp, nempg, codif, obs, anoemp, 
-                                id_cadped, docum, responsa, recebe))
+                                id_cadped, docum, responsa, recebe, None, None, None, None))
             mudou_requi = False
+            commit()
         item += 1
-        cadpro = dict_produtos[row['cdmaterial']]
+        cadpro = dict_produtos[str(row['cdmaterial'])]
         quan1 = row['quantidade']
         quan2 = 0
         vaun1 = row['valor'] / row['quantidade']
@@ -138,13 +148,13 @@ def saldo_inicial():
         codccusto = 0
         destino = '000000001'
 
-        CUR_FDB.execute(icadreq, (EMPRESA, requi, item, cadpro, quan1, quan2, vaun1, vaun2, vato1, vato2, lote, codccusto, destino))
-    commit()
+        CUR_FDB.execute(insert_icadreq, (EMPRESA, id_requi, requi, item, cadpro, quan1, quan2, vaun1, vaun2, vato1, vato2, lote, codccusto, destino))
+        commit()
         
 def movimento():
-    limpa_tabela(('icadreq where requi <> 00000/25','requi where requi <> 00000/25'))
+    limpa_tabela("icadreq where requi <> '00000/25'", "requi where requi <> '00000/25'")
 
-    rows = fetchallmap("""
+    rows = fetchallmap(f"""
     select
         case
             when cdoperacao = 7
@@ -172,9 +182,9 @@ def movimento():
         dtemissao,
         cdorgaoreduzido
     from
-        {ENTIDADE}_COMPRAS.dbo.movimento
+        {ENTIDADE}_ALMOX.dbo.movimento
     where
-        year(dtmovimento) = 2025
+        year(dtmovimento) = {exercicio}
         and cdoperacao > 0
     order by
         dtmovimento,
@@ -185,20 +195,22 @@ def movimento():
     item = 0
     numero = CUR_FDB.execute("select cast(coalesce(max(num),0) as integer) from requi").fetchone()[0]
     requi_atual = ''
+    id_requi = CUR_FDB.execute("select coalesce(max(id_requi),0) from requi").fetchone()[0]
 
     for row in rows:
         if row['operacao'] == 'X':
-            exit('Operação inválida')
+            continue
 
         requisicao_composta = str(row['dtmovimento']) + '-' + str(row['nrdocumento']) + '-' + str(row['cdoperacao'])
 
         if requi_atual != requisicao_composta:
             requi_atual = requisicao_composta
+            id_requi += 1
             item = 0
             numero += 1
             num = f'{numero:05}'
             requi = f'{num}/25'
-            ano = 2025
+            ano = exercicio
             dtlan = row['dtmovimento']
             if row['operacao'] == 'E':
                 datae = dtlan
@@ -220,7 +232,7 @@ def movimento():
                 vato1 = 0
             comp = 'P'
             nempg = None
-            codif = None if row['cdfornecedor'] == 0 else dict_fornecedores[row['cdfornecedor']]
+            codif = None if row['cdfornecedor'] == 0 else obter_codif_por_codant(row['cdfornecedor'])
             obs = None
             anoemp = None
             id_cadped = None
@@ -232,17 +244,18 @@ def movimento():
             nfe_serie = row['nrserie']
             nfe_danfe = row['nrnota']
 
-            CUR_FDB.execute(requi, (EMPRESA, requi, num, ano, 
+            CUR_FDB.execute(insert_requi, (EMPRESA, id_requi, requi, num, ano, 
                             dtlan, datae, dtpag, entr, said, comp, nempg, codif, obs, anoemp, 
                             id_cadped, docum, responsa, recebe, dtemissaonf , entr_said , nfe_serie , nfe_danfe))
+            commit()
         item += 1
-        cadpro = dict_produtos[row['cdmaterial']]
+        cadpro = dict_produtos[str(row['cdmaterial'])]
         quan1 = row['qtdeentrada']
         quan2 = row['qtdesaida']
         lote = '000000000'
         codccusto = row['cdorgaoreduzido']
         destino = '00000001'
 
-        CUR_FDB.execute(icadreq, (EMPRESA, requi, item, cadpro, quan1, quan2, vaun1, 
+        CUR_FDB.execute(insert_icadreq, (EMPRESA, id_requi, requi, item, cadpro, quan1, quan2, vaun1, 
                         vaun2, vato1, vato2, lote, codccusto, destino))
-    commit()
+        commit()
