@@ -1,16 +1,150 @@
 from connection import commit, CUR_FDB, fetchallmap, ENTIDADE
-from utils import limpa_tabela, EMPRESA, dict_produtos, dict_fornecedores, cria_campo, obter_codif_por_nome
+from utils import limpa_tabela, EMPRESA, dict_produtos, dict_fornecedores, cria_campo, obter_codif_por_nome, EXERCICIO
 
 def pedidos():
+    limpa_tabela('icadped', 'cadped')
     cria_campo("cadped","conv_empenho")
     cria_campo("cadped","conv_pkemp")
     cria_campo("cadped","conv_empenho_ano")
+    cria_campo("icadped","codant")
 
     rows = fetchallmap(f"""
-    select
-        sum(vlcotacaoproposta) as vlcotacaoproposta,
-        sum(vltotalitem) as vltotalitem,
-        sum(qtdeitem) as qtdeitem,
+    SELECT
+        SUM(vlcotacaoproposta) AS vlcotacaoproposta,
+        SUM(vltotalitem) AS vltotalitem,
+        SUM(qtdeitem) AS qtdeitem,
+        registro_preco,
+        cod_registro,
+        dtanoprocesso,
+        nrprocesso,
+        cdfornecedor,
+        nrempenho,
+        dtanoempenho,
+        dsobjeto,
+        nritem,
+        lote,
+        cddespesa,
+        dtempenho,
+        cdorgaoreduzido,
+        nrempenhocp,
+        dtanoempenhocp,
+        nrinstrumentocontratual,
+        dtanoinstrumentocontratual,
+        dscondicaopagamento,
+        nmorgao,
+        nmfornecedor,
+        nrcgccpf,
+        maisdeumlote,
+        coalesce(cast(cdmaterial as varchar), CASE WHEN FK_TABELA_PRECO IS NOT NULL THEN CONCAT('TBL', CAST(fk_tabela_preco AS VARCHAR)) ELSE CAST(cdmaterial AS VARCHAR) END) cdmaterial,
+        ID_ProcessoLicitatorio,
+        CONCAT(ID_ProcessoLicitatorio, '-', nritem, '-', 
+            CASE 
+                WHEN FK_TABELA_PRECO IS NOT NULL THEN CONCAT('TBL', CAST(fk_tabela_preco AS VARCHAR))
+                ELSE CAST(cdmaterial AS VARCHAR) 
+            END, '-', lote
+        ) AS codant,
+        preco_por_tabela
+    FROM
+        (
+        SELECT
+            CASE
+                WHEN e.ehregistropreco = '0' THEN 'N'
+                ELSE 'S'
+            END AS registro_preco,
+            FK_TABELA_PRECO,
+            0 AS cod_registro,
+            e.dtanoprocesso,
+            e.nrprocesso,
+            e.cdfornecedor,
+            e.nrempenho,
+            e.dtanoempenho,
+            l.dsobjeto,
+            e.nritem,
+            coalesce(nr_lote, lote) lote,
+            e.cddespesa,
+            e.dtempenho,
+            e.qtdeitem,
+            e.vlcotacaoproposta,
+            e.vltotalitem,
+            e.cdorgaoreduzido,
+            e.nrempenhocp,
+            e.dtanoempenhocp,
+            e.nrinstrumentocontratual,
+            e.dtanoinstrumentocontratual,
+            CAST(cp.dscondicaopagamento AS VARCHAR) AS dscondicaopagamento,
+            o.nmorgao,
+            z.nmfornecedor,
+            TRIM(CAST(CAST(z.nrcgccpf AS DECIMAL(14, 0)) AS CHAR(14))) AS nrcgccpf,
+            CASE
+                WHEN EXISTS (
+                SELECT
+                    1
+                FROM
+                    {ENTIDADE}_COMPRAS.dbo.proposta b
+                WHERE
+                    e.dtanoprocesso = b.dtanoprocesso
+                    AND e.nrprocesso = b.nrprocesso
+                    AND e.lote <> b.lote
+                ) THEN 'S'
+                ELSE 'N'
+            END AS maisdeumlote,
+            COALESCE (
+                (
+            SELECT
+                TOP 1 i.cdmaterial
+            FROM
+                {ENTIDADE}_ALMOX.dbo.INTEGRAINSTRUMENTOPEDIDO i
+            WHERE
+                i.nrprocesso = e.nrprocesso
+                AND i.dtanoprocesso = e.dtanoprocesso
+                AND i.cdtipoprocesso = e.cdtipoprocesso
+                AND i.lote = e.lote
+                AND i.nritem = e.nritem),
+            (
+            SELECT
+                TOP 1 i.cdmaterial
+            FROM
+                {ENTIDADE}_COMPRAS.dbo.ITEMOBJETO i
+            WHERE
+                i.nrprocesso = e.nrprocesso
+                AND i.dtanoprocesso = e.dtanoprocesso
+                AND i.cdtipoprocesso = e.cdtipoprocesso
+                AND i.lote = e.lote
+                AND i.nritem = e.nritem)
+            ) AS cdmaterial,
+            ID_ProcessoLicitatorio,
+            case when t.fk_tabela_preco is not null then 'S' else 'N' end preco_por_tabela
+        FROM
+            {ENTIDADE}_COMPRAS.dbo.dataview_pedidoempenho e
+        INNER JOIN {ENTIDADE}_COMPRAS.dbo.processolicitatorio l 
+            ON
+            e.dtanoprocesso = l.dtanoprocesso
+            AND e.nrprocesso = l.nrprocesso
+            AND e.cdtipoprocesso = l.cdtipoprocesso
+        LEFT JOIN {ENTIDADE}_COMPRAS.dbo.condicaopagamento cp 
+            ON
+            cp.cdcondicaopagamento = l.cdcondicaopagamento
+        LEFT JOIN {ENTIDADE}_COMPRAS.dbo.orgao o 
+            ON
+            e.cdorgaoreduzido = o.cdorgaoreduzido
+            AND e.dtanoempenho = o.dtano
+        INNER JOIN {ENTIDADE}_ALMOX.dbo.fornecedor z 
+            ON
+            z.cdfornecedor = e.cdfornecedor
+        LEFT JOIN (
+            SELECT
+                pkid,
+                fk_tabela_preco,
+                FK_PROCESSO_LICITATORIO,
+                nr_lote
+            FROM
+                {ENTIDADE}_COMPRAS.dbo.TABELA_PRECO_PROCESSO
+        ) t 
+        ON
+            t.FK_PROCESSO_LICITATORIO = l.pkid
+        WHERE e.dtanoempenho >= {int(EXERCICIO)-5}
+    ) AS p
+    GROUP BY
         registro_preco,
         cod_registro,
         dtanoprocesso,
@@ -35,114 +169,9 @@ def pedidos():
         maisdeumlote,
         cdmaterial,
         ID_ProcessoLicitatorio,
-        CONCAT(ID_ProcessoLicitatorio, '-', nritem, '-', cdmaterial, '-', lote) codant
-    from
-        (
-        select
-            case
-                when e.ehregistropreco = '0' then 'N'
-                else 'S'
-            end registro_preco,
-            0 as cod_registro,
-            e.dtanoprocesso,
-            e.nrprocesso,
-            e.cdfornecedor,
-            e.nrempenho,
-            e.dtanoempenho,
-            l.dsobjeto,
-            e.nritem,
-            e.lote,
-            e.cddespesa,
-            e.dtempenho,
-            e.qtdeitem,
-            e.vlcotacaoproposta,
-            e.vltotalitem,
-            e.cdorgaoreduzido,
-            e.nrempenhocp,
-            e.dtanoempenhocp,
-            e.nrinstrumentocontratual,
-            e.dtanoinstrumentocontratual,
-            cast(cp.dscondicaopagamento as varchar) as dscondicaopagamento,
-            o.nmorgao,
-            z.nmfornecedor,
-            trim(CAST(CAST(z.nrcgccpf AS DECIMAL(14,0)) AS CHAR(14))) nrcgccpf,
-            case
-                when exists(
-                select
-                    1
-                from
-                    {ENTIDADE}_COMPRAS.dbo.proposta b
-                where
-                    e.dtanoprocesso = b.dtanoprocesso
-                    and e.nrprocesso = b.nrprocesso
-                    and e.lote <> b.lote) 
-                                            then 'S'
-                else 'N'
-            end as maisdeumlote,
-            coalesce((
-            select
-                top 1 i.cdmaterial
-            from
-                {ENTIDADE}_ALMOX.dbo.INTEGRAINSTRUMENTOPEDIDO i
-            where
-                i.nrprocesso = e.nrprocesso
-                and i.dtanoprocesso = e.dtanoprocesso
-                and i.cdtipoprocesso = e.cdtipoprocesso
-                and i.lote = e.lote
-                and i.nritem = e.nritem),
-            (
-            select
-                top 1 i.cdmaterial
-            from
-                {ENTIDADE}_COMPRAS.dbo.ITEMOBJETO i
-            where
-                i.nrprocesso = e.nrprocesso
-                and i.dtanoprocesso = e.dtanoprocesso
-                and i.cdtipoprocesso = e.cdtipoprocesso
-                and i.lote = e.lote
-                and i.nritem = e.nritem)
-                                            ) as cdmaterial,
-        ID_ProcessoLicitatorio
-        from
-            {ENTIDADE}_COMPRAS.dbo.dataview_pedidoempenho e
-        inner join {ENTIDADE}_COMPRAS.dbo.processolicitatorio as l on
-            e.dtanoprocesso = l.dtanoprocesso
-            and e.nrprocesso = l.nrprocesso
-            and e.cdtipoprocesso = l.cdtipoprocesso
-        left join {ENTIDADE}_COMPRAS.dbo.condicaopagamento as cp on
-            cp.cdcondicaopagamento = l.cdcondicaopagamento
-        left join {ENTIDADE}_COMPRAS.dbo.orgao as o on
-            e.cdorgaoreduzido = o.cdorgaoreduzido
-            and e.dtanoempenho = o.dtano
-        inner join {ENTIDADE}_ALMOX.dbo.fornecedor z on
-            z.cdfornecedor = e.cdfornecedor) as p
-    where cdmaterial is not Null
-    group by
-        registro_preco,
-        cod_registro,
-        dtanoprocesso,
-        nrprocesso,
-        cdfornecedor,
-        nrempenho,
-        dtanoempenho,
-        dsobjeto,
-        nritem,
-        lote,
-        cddespesa,
-        dtempenho,
-        cdorgaoreduzido,
-        nrempenhocp,
-        dtanoempenhocp,
-        nrinstrumentocontratual,
-        dtanoinstrumentocontratual,
-        dscondicaopagamento,
-        nmorgao,
-        nmfornecedor,
-        nrcgccpf,
-        maisdeumlote,
-        cdmaterial,
-        ID_ProcessoLicitatorio
-    order by
+        FK_TABELA_PRECO,
+        preco_por_tabela
+    ORDER BY
         dtanoempenho,
         nrempenho""")
 
@@ -195,8 +224,10 @@ def pedidos():
                 , ficha
                 , desdobro
                 , marca
+                , item_licit
+                , cadpro_licit
             )
-        values (?,?,?,?,?,?,?,?,?,?,?)""")
+        values (?,?,?,?,?,?,?,?,?,?,?,?,?)""")
     
     pedido_atual = ''
     
@@ -217,13 +248,14 @@ def pedidos():
     except:
         pass
 
-    itens_cadpro = {codant: (codccusto, item, cadpro, codif) for codant, codccusto, item, codif, cadpro in CUR_FDB.execute("SELECT cc.CODANT, co.CODCCUSTO, co.item, co.codif, co.cadpro FROM cadpro co JOIN cadprolic cc ON co.item = cc.item AND co.numlic = cc.numlic")}
+    itens_cadpro = {codant: (codccusto, item, cadpro, codif) for codant, codccusto, item, codif, cadpro in CUR_FDB.execute("SELECT cc.CODANT, co.CODCCUSTO, co.item, co.codif, co.cadpro FROM cadpro co JOIN cadprolic cc ON co.item = cc.item AND co.numlic = cc.numlic where subem = 1")}
     exercicio = CUR_FDB.execute('SELECT mexer FROM CADCLI c ').fetchone()[0]
+    item = 0
 
     for row in rows:
         ficha = None
-        if row['dtanoempenho'] == exercicio:
-            ficha = next((x['ficha'] for x in fichas if x['fichasecundaria'] == row['cddespesa']), None)
+        if row['dtanoempenho'] == int(exercicio):
+            ficha = next((x['fichaprincipal'] for x in fichas if x['fichasecundaria'] == row['cddespesa']), None)
 
         nroPedido = f'{row['nrempenho']:05}' + '/' + str(row['dtanoempenho'])[2:4]
 
@@ -233,6 +265,7 @@ def pedidos():
             numped = nroPedido
             num = f'{row['nrempenho']:05}'
             ano = row['dtanoempenho']
+            item = 0
             
             insmf = row['nrcgccpf']
 
@@ -277,28 +310,36 @@ def pedidos():
         
         codant = row['codant']        
         item_info = itens_cadpro.get(codant, 0)
-
-        if item_info == 0:
-            if row['lote'] > 9 or row['nritem'] > 99:
-                item = str(row['lote'])  + '0' + str(row['nritem'])
-            cadpro = dict_produtos[str(row['cdmaterial'])]
-            codccusto = row['cdorgaoreduzido']
-            marca = None
-        else:
-            item = item_info[1]
-            cadpro = item_info[2]
-            codccusto = item_info[0]
-            marca = item_info[3]
-        
-        qtd = row['qtdeitem']
-        prcunt = row['vlcotacaoproposta']
-        prctot = row['vltotalitem']
-        desdobro = None
+        item_licit = None
+        cadpro_licit = None
+        cadpro = dict_produtos[str(row['cdmaterial'])]
+        item += 1
 
         try:
+            if item_info == 0:
+                if row['lote'] > 9 or row['nritem'] > 99:
+                    item = str(row['lote'])  + '0' + str(row['nritem'])
+                codccusto = row['cdorgaoreduzido']
+                marca = None
+                if row['preco_por_tabela'] == 'S':
+                    item_licit = row['nritem']
+                    cadpro_licit = item_info[2]
+            else:
+                cadpro = item_info[2]
+                codccusto = item_info[0]
+                marca = item_info[3]
+                if row['preco_por_tabela'] == 'S':
+                    item_licit = item_info[1]
+                    cadpro_licit = item_info[2]
+            
+            qtd = row['qtdeitem']
+            prcunt = row['vlcotacaoproposta']
+            prctot = row['vltotalitem']
+            desdobro = None
+
             CUR_FDB.execute(insert_itens, (numped, id_cadped, item, cadpro, codccusto,
-                                        qtd, prcunt, prctot,ficha,desdobro, marca))
-        except:
+                                        qtd, prcunt, prctot,ficha,desdobro, marca, item_licit, cadpro_licit))
+        except Exception as e:
             print(f'Erro ao inserir item {item} do pedido {numped}')
     commit()
 
@@ -346,6 +387,41 @@ def pedidos():
             and c.registropreco = 'S')""")
     commit()
 
+    CUR_FDB.execute("""
+    EXECUTE BLOCK 
+    AS 
+    DECLARE VARIABLE ID_CADPED INTEGER;
+    DECLARE VARIABLE PKEMP INTEGER;
+    DECLARE VARIABLE cadpro_tabela VARCHAR(50);
+    DECLARE VARIABLE codccusto INTEGER;
+    BEGIN
+        FOR 
+            SELECT b.ID_CADPED, a.pkemp 
+            FROM despesitem a 
+            JOIN despes b ON a.pkemp = b.pkemp 
+            WHERE EXISTS (SELECT 1 FROM icadped c WHERE c.cadpro LIKE '999%' AND c.id_cadped = b.id_cadped) 
+            INTO :id_cadped, :pkemp
+        DO
+        BEGIN
+            -- Buscar os valores máximos de CADPRO e CODCCUSTO para o ID_CADPED
+            SELECT MAX(CADPRO), MAX(codccusto) 
+            FROM icadped 
+            WHERE id_cadped = :id_cadped 
+            INTO :cadpro_tabela, :codccusto;
+
+            -- Remover os registros antigos
+            DELETE FROM icadped WHERE id_cadped = :id_cadped;
+
+            -- Inserir os novos registros
+            INSERT INTO icadped (numped, id_cadped, item, cadpro, codccusto, qtd, prcunt, prctot)
+            SELECT 0, :id_cadped, item, :cadpro_tabela, :codccusto, vltotal/vlunit, vlunit, vltotal
+            FROM despesitem 
+            WHERE pkemp = :pkemp and vlunit <> 0;
+        END
+        UPDATE ICADPED A SET A.NUMPED = (SELECT B.NUMPED FROM CADPED B WHERE B.ID_CADPED = A.ID_CADPED) where A.numped = '0';
+    END
+    """)
+
 
 def autorizacao():
     rows = fetchallmap(f"""
@@ -377,10 +453,16 @@ def autorizacao():
                 l.dtanoprocesso = b.dtanoprocesso
                 and l.nrprocesso = b.nrprocesso
                 and i.lote <> b.lote) 
-                                            then 'S'
+                                                then 'S'
             else 'N'
         end as maisdeumlote,
-        CONCAT(ID_ProcessoLicitatorio, '-', nritem, '-', cdmaterial, '-', lote) codant
+        CONCAT(ID_ProcessoLicitatorio, '-', nritem, '-', 
+                CASE 
+                    WHEN t.FK_TABELA_PRECO IS NOT NULL THEN CONCAT('TBL', CAST(t.fk_tabela_preco AS VARCHAR))
+                    ELSE CAST(cdmaterial AS VARCHAR) 
+                END, '-', coalesce(nr_lote, lote)
+            ) AS codant,
+            e.CD_ORGAO_REDUZIDO
     from
         {ENTIDADE}_COMPRAS.dbo.instrumentocontratual l
     inner join {ENTIDADE}_COMPRAS.dbo.iteminstrumentocontratual i on
@@ -394,9 +476,21 @@ def autorizacao():
         and i.fk_instrumento_contratual_empenho = e.pkid
     left join {ENTIDADE}_COMPRAS.dbo.localentrega z on
         z.cdlocalentrega = l.cdlocalentrega
+    LEFT JOIN (
+        SELECT
+            pkid,
+            fk_tabela_preco,
+            FK_PROCESSO_LICITATORIO,
+            nr_lote
+        FROM
+            {ENTIDADE}_COMPRAS.dbo.TABELA_PRECO_PROCESSO
+            ) t 
+            ON
+                t.FK_PROCESSO_LICITATORIO = l.ID_PROCESSOLICITATORIO
+        and t.nr_lote = i.Lote
     where
         e.nr_empenho <> 0
-        and dt_ano_empenho <> 0
+        and dt_ano_empenho >= {int(EXERCICIO)-5}
     order by
         l.nrinstrumentocontratual,
         e.dt_ano_empenho,
@@ -451,10 +545,10 @@ def autorizacao():
             , prctot
             , ficha
             , desdobro
-            , marca
+            , item_licit
+            , cadpro_licit
         )
-    values (?,?,?,?,?,
-            ?,?,?,?,?,?)""")
+    values (?,?,?,?,?,?,?,?,?,?,?,?)""")
     
     pedido_atual = ""
     itens_cadpro = {codant: (codccusto, item, cadpro, codif) for codant, codccusto, item, codif, cadpro in CUR_FDB.execute("SELECT cc.CODANT, co.CODCCUSTO, co.item, co.codif, co.cadpro FROM cadpro co JOIN cadprolic cc ON co.item = cc.item AND co.numlic = cc.numlic")}
@@ -462,6 +556,7 @@ def autorizacao():
     for row in rows:
         numero_composto = f'{row['nrinstrumentocontratual']}_{row['dtanoinstrumentocontratual']}_{row['tpinstrumentocontratual']}_{row['nr_empenho']}'
         if numero_composto != pedido_atual:
+            item = 0
             pedido_atual = numero_composto
             numero += 1
             num = f'{numero:05}'
@@ -496,29 +591,28 @@ def autorizacao():
                                             , obs, id_cadped, EMPRESA, aditamento
                                             , contrato, npedlicit, id_cadpedlicit))
             
-        codant = row['codant']        
-        item_info = itens_cadpro.get(codant, 0)
-
-        if item_info == 0:
-            if row['lote'] > 9 or row['nritem'] > 99:
-                item = str(row['lote'])  + '0' + str(row['nritem'])
-            cadpro = dict_produtos[str(row['cdmaterial'])]
-            codccusto = 0
-            marca = None
-        else:
-            item = item_info[1]
-            cadpro = item_info[2]
-            codccusto = item_info[0]
-            marca = item_info[3]
-
-        qtd = row['qtitem']
-        prcunt = row['valor_unitario']
-        prctot = row['qtitem']*row['valor_unitario']
-        ficha = None
-        desdobro = None
-
         try:
-            CUR_FDB.execute(insert_itens, (numped, id_cadped, item, cadpro, codccusto, qtd, prcunt, prctot, ficha, desdobro, marca))
+            item += 1
+            codant = row['codant']        
+            item_info = itens_cadpro.get(codant, 0)
+            cadpro = dict_produtos[str(row['cdmaterial'])]
+            ehtabela = codant.split('-')[2]
+
+            if 'TBL' in ehtabela and item_info != 0:
+                item_licit = item_info[1]
+                cadpro_licit = item_info[2]
+            else: 
+                item_licit = None
+                cadpro_licit = None
+
+            qtd = row['qtitem']
+            prcunt = row['valor_unitario']
+            prctot = row['qtitem']*row['valor_unitario']
+            ficha = None
+            desdobro = None
+
+
+            CUR_FDB.execute(insert_itens, (numped, id_cadped, item, cadpro, codccusto, qtd, prcunt, prctot, ficha, desdobro, item_licit, cadpro_licit))
         except:
             print(f'Erro ao inserir item {item} do subpedido {numped}')
     commit()

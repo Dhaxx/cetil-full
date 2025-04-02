@@ -1,16 +1,16 @@
 from modules import compras, patrimonio
-import utils
+from utils import armazena_fornecedores
 
 def main():
-    compras.base.cadunimedida()
-    compras.base.cadgrupo()
-    compras.base.cadest()
-    compras.base.destino()
-    compras.base.centro_custo()
-    compras.base.fornecedores()
+    # compras.base.cadunimedida()
+    # compras.base.cadgrupo()
+    # compras.base.cadest()
+    # compras.base.destino()
+    # compras.base.centro_custo()
+    # compras.base.fornecedores()
 
-    compras.cotacao.itens()
-    utils.armazena_fornecedores()
+    # compras.cotacao.itens()
+    armazena_fornecedores()
     compras.cotacao.fcadorc()
     compras.cotacao.vcadorc()
 
@@ -19,6 +19,7 @@ def main():
     compras.licitacao.prolic_prolics()
     compras.licitacao.cadprolic()
     compras.licitacao.proposta()
+    
     compras.execucao.pedidos()
     compras.execucao.autorizacao()
     compras.almoxarifado.saldo_inicial()

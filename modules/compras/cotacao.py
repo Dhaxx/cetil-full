@@ -126,7 +126,7 @@ def itens():
             num = cabecalho['num']
             ano = cabecalho['dtanopesquisa']
             dtorc = cabecalho['dtexpedicao']
-            descr = cabecalho['dspesquisa'].title()
+            descr = cabecalho['dspesquisa'][:1024].title()
             obs = cabecalho['justificativa_contratacao'].capitalize() if cabecalho['justificativa_contratacao'] else None
             codccusto = 0
             status = 'EC'
@@ -140,7 +140,7 @@ def itens():
                 proclic = None
                 numlic = None
             registropreco = "N"
-            condpgto = cabecalho['dscondicaopagamento'][:30]
+            condpgto = cabecalho['dscondicaopagamento'][:30] if cabecalho['dscondicaopagamento'] else None
             local = cabecalho['local'][:60]
 
             CUR_FDB.execute(insert, (numorc
@@ -161,9 +161,7 @@ def itens():
             , local))
 
             cotacao_anterior = idcadorc
-    commit()
-
-    
+    commit()  
 
     for item in itens:
         nritem = item['nritem'] if item['qtdlote'] == 1 else str(item['lote']) + str(item['nritem']) 
@@ -175,7 +173,7 @@ def itens():
         valor = 0
         cadpro = dict_produtos[str(item['cdmaterial'])]
         numorc = item['numorc']
-        codccusto = item['cdOrgaoReduzido']
+        codccusto = 0
         qtd = item['qtitempesquisa']
         idcadorc = item['nrpesquisa']
         codant = item['codant']
@@ -227,7 +225,10 @@ def fcadorc():
         valorc = 0
         id_cadorc = row['nrpesquisa']
 
-        CUR_FDB.execute(insert, (numorc, codif, nome, valorc, id_cadorc, insmf))
+        try:
+            CUR_FDB.execute(insert, (numorc, codif, nome, valorc, id_cadorc, insmf))
+        except:
+            continue
     commit()
 
 def vcadorc():

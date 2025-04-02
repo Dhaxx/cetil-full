@@ -3,6 +3,13 @@ from utils import EMPRESA, limpa_tabela
 
 def pt_cadtip():
     limpa_tabela("pt_cadtip")
+    CUR_FDB.execute('ALTER TRIGGER TU_PT_CADPAT_BLOQUEIO INACTIVE')
+    CUR_FDB.execute('ALTER TRIGGER TU_PT_MOVBEM_BLOQUEIO INACTIVE')
+    CUR_FDB.execute('ALTER TRIGGER TB_PT_MOVBEM_BLOQUEIO INACTIVE')
+    CUR_FDB.execute('ALTER TRIGGER TU_PT_CADPAT_BLOQUEIO_ENTIDADE INACTIVE')
+    CUR_FDB.execute('ALTER TRIGGER TU_PT_MOVBEM_BLOQUEIO_ENTIDADE INACTIVE')
+    CUR_FDB.execute('ALTER TRIGGER TB_PT_MOVBEM_BLOQUEIO_ENTIDADE INACTIVE')
+    commit()
 
     rows = fetchallmap(f"""
     select

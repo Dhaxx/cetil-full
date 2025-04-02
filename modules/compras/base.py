@@ -1,5 +1,5 @@
 from connection import commit, CUR_FDB, fetchallmap, ENTIDADE
-from utils import limpa_tabela, cria_campo, EMPRESA, dict_produtos, cpf_cnpj, dict_fornecedores, armazena_fornecedores
+from utils import limpa_tabela, cria_campo, EMPRESA, dict_produtos, cpf_cnpj, dict_fornecedores, armazena_fornecedores, armazena_produtos, decode_to_win1252
 
 def cadunimedida():
     limpa_tabela("cadunimedida")
@@ -94,7 +94,7 @@ def cadest():
 
     grupos = CUR_FDB.execute("select grupo,nome, cast(conv_id as integer) as id, cast(conv_tipo as integer) as tipo from cadgrupo").fetchallmap()
     codigo_int = 0
-    subgrupos_set = {x for x in CUR_FDB.execute("select grupo||'.'||subgrupo from cadsubgr").fetchall()}
+    subgrupos_set = {x[0] for x in CUR_FDB.execute("select grupo||'.'||subgrupo from cadsubgr").fetchall()}
     grupo_atual = ''
 
     for row in rows:
@@ -114,14 +114,15 @@ def cadest():
 
             if grupo+'.'+subgrupo not in subgrupos_set:
                 CUR_FDB.execute("insert into cadsubgr(grupo, subgrupo,nome,ocultar) values(?,?,?,?)", (grupo,subgrupo,nome_grupo,'N'))
+                commit()
                 subgrupos_set.add(grupo+'.'+subgrupo)
         else: 
             subgrupo = '000'
             codigo = f'{codigo_int}'.zfill(3)
         
         cadpro = f'{grupo}.{subgrupo}.{codigo}'
-        disc1 = row['dsmaterial'].title()
-        discr1 = row['dsmaterial'].title()
+        disc1 = decode_to_win1252(row['dsmaterial']).title()
+        discr1 = disc1
         tipopro = row['tipo']
         usopro = row['usopro']
         unid1 = row['siglas']
@@ -131,6 +132,37 @@ def cadest():
                     (cadpro,grupo,subgrupo,codreduz,codigo,disc1,discr1,tipopro,usopro,unid1))  
         dict_produtos[codreduz] = cadpro
     commit()
+
+    tabelas = fetchallmap(f"""select
+        concat('TBL', pkid) codreduz,
+        pkid,
+        tp.DS_TABELA,
+        tp.DS_ORGAO marca
+    from
+        {ENTIDADE}_COMPRAS.dbo.TABELA_PRECO tp""")
+    
+    try:
+        CUR_FDB.execute("INSERT INTO CadGrupo(grupo, nome, ocultar) VALUES (?, ?, ?)", ('999','Tabela de Produtos','N'))
+        CUR_FDB.execute("insert into cadsubgr(grupo, subgrupo,nome,ocultar) values(?,?,?,?)", ('999','000','Tabela de Produtos','N'))
+        commit()
+    except:
+        pass
+    
+    for x, tabela in enumerate(tabelas):
+        x += 1
+        cadpro = f'999.000.{x:03}'
+        disc1 = tabela['DS_TABELA']
+        discr1 = f'{disc1} - {tabela['marca']}'
+        tipopro = 'P'
+        usopro = 'C'
+        unid1 = 'UN'
+        codreduz = tabela['codreduz']
+
+        CUR_FDB.execute("INSERT INTO Cadest(cadpro, grupo, subgrupo, codreduz, codigo, disc1, discr1, tipopro, usopro, unid1) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", 
+                    (cadpro,grupo,subgrupo,codreduz,codigo,disc1,discr1,tipopro,usopro,unid1))  
+        dict_produtos[codreduz] = cadpro
+    commit()
+    armazena_produtos()
 
 def centro_custo():
     limpa_tabela('centrocusto')
@@ -178,7 +210,7 @@ def centro_custo():
     commit()
 
 def destino():
-    limpa_tabela('destino')
+    limpa_tabela('centrocusto', 'destino')
 
     rows = fetchallmap(f"""
     select

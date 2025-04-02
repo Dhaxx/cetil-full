@@ -60,7 +60,9 @@ values (?,?,?,?,?,
         ?,?,?,?)""")
 
 def saldo_inicial():
-    limpa_tabela("icadreq where requi = '00000/25","requi where requi = '00000/25'")
+    limpa_tabela("icadreq where requi = '00000/25'","requi where requi = '00000/25'")
+    CUR_FDB.execute('ALTER TRIGGER TAU_ESTOQUE inactive')
+    commit()
 
     id_requi = CUR_FDB.execute("select coalesce(max(id_requi),0) from requi").fetchone()[0]
 
@@ -129,7 +131,7 @@ def saldo_inicial():
             docum = None
             responsa = None
             recebe = None
-            requi = f'{num}/{str(int(exercicio)-1)[2:]}'
+            requi = f'{num}/{str(int(exercicio))[2:]}'
 
             CUR_FDB.execute(insert_requi, (EMPRESA, id_requi, requi, num, ano, 
                                 dtlan, datae, dtpag, entr, said, comp, nempg, codif, obs, anoemp, 

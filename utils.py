@@ -33,9 +33,11 @@ dict_produtos = {}
 
 def armazena_produtos():
     if len(dict_produtos) < 1:
-        for k, v in CUR_FDB.execute('select codreduz, cadpro from cadest').fetchall():
+        for k, v in CUR_FDB.execute('select cast(codreduz as varchar(50)), cadpro from cadest').fetchall():
             dict_produtos[k] = v 
     else: print('itens já estão armazenados!')
+
+armazena_produtos() if len(dict_produtos) == 0 else ...
 
 def limpa_patrimonio():
     tabelas = ('pt_movbem','pt_cadpat','pt_cadbai','pt_cadpats','pt_cadpatd','pt_cadsit','pt_cadpatg','pt_cadtip')
@@ -104,3 +106,16 @@ def limpa_tabelas_compras():
     for tabela in tabelas:
         limpa_tabela(tabela)
     commit()
+
+EXERCICIO = CUR_FDB.execute('SELECT mexer FROM CADCLI c ').fetchone()[0]
+
+import unicodedata
+
+def decode_to_win1252(input_str: str) -> str:
+    # Remove caracteres que não podem ser representados em WIN1252
+    input_str = ''.join(c for c in input_str if c in bytes(range(256)).decode('windows-1252', errors='ignore'))
+    
+    # Normaliza caracteres acentuados para versões compatíveis
+    input_str = unicodedata.normalize("NFKD", input_str).encode("ascii", "ignore").decode("ascii")
+    
+    return input_str.strip()

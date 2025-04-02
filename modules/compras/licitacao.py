@@ -83,10 +83,10 @@ def cadlic():
 		dtHomologacao,
 		Concat(cdTipoProcesso,cdtipoModalidade,inPregaoEletronico) tipo_processo,
 		dacondicaopagamento,
-        p.dtRespostaSolicitacao dtreal,
-        p.dtInicioEnvioProposta,
-        p.dtTerminoRecebimento,
-        p.dtJulgamentoProposta
+        dtRespostaSolicitacao dtreal,
+        dtInicioEnvioProposta,
+        dtTerminoRecebimento,
+        dtJulgamentoProposta
     from
         {ENTIDADE}_COMPRAS.dbo.processolicitatorio
     left join {ENTIDADE}_COMPRAS.dbo.condicaopagamento on
@@ -149,13 +149,27 @@ def cadlic():
     """)
     commit()
 
+    CUR_FDB.execute("""
+    MERGE INTO CADORC A USING (SELECT numlic, proclic FROM cadlic) B
+    ON A.PROCLIC = B.PROCLIC 
+    WHEN MATCHED THEN UPDATE SET A.numlic = B.numlic;
+    """)
+    commit()
+
+    CUR_FDB.execute("""
+    MERGE INTO CADLIC A USING (SELECT id_cadorc, NUMORC, NUMLIC FROM CADORC) B
+    ON A.NUMLIC = B.NUMLIC 
+    WHEN MATCHED THEN UPDATE SET A.id_cadorc = B.id_cadorc, A.numorc = B.numorc
+    """)
+    commit()
+
 def cadlotelic():
     limpa_tabela('cadlotelic')
 
     rows = fetchallmap(f"""
     SELECT
         DISTINCT 
-        pkid identificador,
+            p.pkid identificador,
         lote,
         nmlote,
         p.cdTipoProcesso
@@ -163,10 +177,13 @@ def cadlotelic():
     FROM
         {ENTIDADE}_COMPRAS.dbo.itemobjeto a
     JOIN {ENTIDADE}_COMPRAS.dbo.processolicitatorio p 
-        ON
+            ON
         p.dtanoprocesso = a.dtanoprocesso
         AND p.nrprocesso = a.nrprocesso
         AND p.cdtipoprocesso = a.cdtipoprocesso
+    left join {ENTIDADE}_COMPRAS.dbo.TABELA_PRECO_PROCESSO tpp
+            on
+        tpp.FK_PROCESSO_LICITATORIO = p.PKID
     WHERE
         lote > 0
     GROUP BY
@@ -178,9 +195,17 @@ def cadlotelic():
         p.cdtipoModalidade,
         p.inPregaoEletronico,
         p.dtAnoProcesso,
-        pkid
+        p.pkid
+    union all
+    select
+        distinct tpp.FK_PROCESSO_LICITATORIO,
+        nr_lote,
+        tpp.NM_LOTE,
+        cd_tipo_processo
+    from
+        {ENTIDADE}_COMPRAS.dbo.TABELA_PRECO_PROCESSO tpp
     ORDER BY
-        p.cdTipoProcesso;
+        p.cdTipoProcesso
     """)
 
     insert = CUR_FDB.prep("insert into cadlotelic(numlic,lotelic,descr,reduz,microempresa,tlance) values(?,?,?,?,?,?)")
@@ -263,6 +288,8 @@ def prolic_prolics():
 
 def cadprolic():
     limpa_tabela('cadpro_status', 'cadprolic_detalhe', 'cadprolic')
+    CUR_FDB.execute('ALTER TRIGGER TBIU_CADPRO_STATUS inactive')
+    commit()
     cria_campo('cadprolic', 'codant')
 
     rows = fetchallmap(f"""
@@ -287,13 +314,13 @@ def cadprolic():
         (
         SELECT
             DISTINCT 
-                        nrprocesso,
+                            nrprocesso,
             dtanoprocesso,
             cdtipoProcesso,
             PKID,
             nritem,
             CONCAT(PKID, '-', nritem, '-', cdmaterial, '-', lote) AS codant,
-            cdmaterial,
+            cast(cdmaterial as varchar) cdmaterial,
             lote,
             cdOrgaoReduzido codccusto,
             qtdeItem qtitemObjeto,
@@ -308,8 +335,11 @@ def cadprolic():
                 cdFornecedor,
                 c.Lote,
                 c.nritem,
-                coalesce(t.cd_produto, c.cdMaterial) cdMaterial,
-                t.cd_produto,
+                case
+                    when c.FK_TABELA_PRECO_PROCESSO is not null then concat('TBL', cast(fk_tabela_preco as varchar))
+                    else cast(c.cdMaterial as varchar)
+                end as cdMaterial,
+                --coalesce(t.fk_tabela_preco , c.cdMaterial) cdMaterial,
                 vlCotacaoProposta,
                 nrClassificacao,
                 i2.qtdeItem,
@@ -319,26 +349,32 @@ def cadprolic():
             FROM
                 {ENTIDADE}_COMPRAS.dbo.classificacaoproposta c
             JOIN {ENTIDADE}_COMPRAS.dbo.PROCESSOLICITATORIO p 
-                                ON
+                                    ON
                 c.nrProcesso = p.nrProcesso
                 AND c.dtAnoProcesso = p.dtAnoProcesso
                 AND c.cdTipoProcesso = p.cdTipoProcesso
             left JOIN {ENTIDADE}_COMPRAS.dbo.ITEMOBJETO i 
-                            ON
+                                ON
                 i.ID_PROCESSOLICITATORIO = p.PKID
                 and CONCAT(i.ID_PROCESSOLICITATORIO, '-', i.nritem, '-', i.cdmaterial, '-', i.lote) = CONCAT(c.FK_PROCESSO_LICITATORIO, '-', c.nritem, '-', c.cdmaterial, '-', c.lote)
             left JOIN {ENTIDADE}_COMPRAS.dbo.ITEMDESPESA i2 
-                                ON
+                                    ON
                 i2.nrProcesso = p.nrProcesso
                 and i2.dtAnoProcesso = p.dtAnoProcesso
                 and i2.cdTipoProcesso = p.cdTipoProcesso
                 and i2.Lote = i.Lote
                 and i2.nrItem = i.nrItem
             left join {ENTIDADE}_COMPRAS.dbo.DESPESA d
-                                ON
+                                    ON
                 i2.dtAnoExercicio = d.dtAno
                 and i2.cdDespesa = d.cdDespesa
-            left join (select pkid, cd_produto from {ENTIDADE}_COMPRAS.dbo.TABELA_PRECO_ITEM) t on
+            left join (
+                select
+                    pkid,
+                    fk_tabela_preco,
+                    vl_estimado
+                from
+                    {ENTIDADE}_COMPRAS.dbo.TABELA_PRECO_PROCESSO tpp) t on
                 t.pkid = c.FK_TABELA_PRECO_PROCESSO) AS qr
         ) AS x""")
 
@@ -516,15 +552,21 @@ def proposta():
         c.cdFornecedor,
         c.Lote,
         c.nritem,
-        coalesce(t.cd_produto,
-        c.cdMaterial) cdMaterial,
+        case
+            when c.FK_TABELA_PRECO_PROCESSO is not null then concat('TBL', cast(fk_tabela_preco as varchar))
+            else cast(c.cdMaterial as varchar)
+        end as cdMaterial,
         vlCotacaoProposta,
         nrClassificacao,
-        coalesce(i.qtitemObjeto, 1) qtitemObjeto,
+        coalesce(i.qtitemObjeto,
+        1) qtitemObjeto,
         i.vlCotacaoItem,
-        CONCAT(p.PKID, '-', c.nritem, '-', c.cdmaterial, '-', c.lote) AS codant,
+        CONCAT(p.PKID, '-', c.nritem, '-', case
+                        when c.FK_TABELA_PRECO_PROCESSO is not null then concat('TBL', cast(fk_tabela_preco as varchar))
+                        else cast(c.cdMaterial as varchar)
+                    end, '-', c.lote) AS codant,
         coalesce(
-                    (
+                        (
         select
             top 1 cp.vlcotacaoproposta
         from
@@ -544,12 +586,12 @@ def proposta():
     FROM
         {ENTIDADE}_COMPRAS.dbo.classificacaoproposta c
     JOIN {ENTIDADE}_COMPRAS.dbo.PROCESSOLICITATORIO p 
-            ON
+                ON
         c.nrProcesso = p.nrProcesso
         AND c.dtAnoProcesso = p.dtAnoProcesso
         AND c.cdTipoProcesso = p.cdTipoProcesso
     left JOIN {ENTIDADE}_COMPRAS.dbo.ITEMOBJETO i 
-            ON
+                ON
         i.ID_PROCESSOLICITATORIO = p.PKID
         and CONCAT(i.ID_PROCESSOLICITATORIO, '-', i.nritem, '-', i.cdmaterial, '-', i.lote) = CONCAT(c.FK_PROCESSO_LICITATORIO, '-', c.nritem, '-', c.cdmaterial, '-', c.lote)
     JOIN (
@@ -562,10 +604,10 @@ def proposta():
     left join (
         select
             pkid,
-            cd_produto
+            fk_tabela_preco
         from
-            {ENTIDADE}_COMPRAS.dbo.TABELA_PRECO_ITEM) t on
-            t.pkid = c.FK_TABELA_PRECO_PROCESSO""")
+            {ENTIDADE}_COMPRAS.dbo.TABELA_PRECO_PROCESSO) t on
+        t.pkid = c.FK_TABELA_PRECO_PROCESSO""")
 
     itens_processo = {codant : (item, codccusto) for codant, item, codccusto in CUR_FDB.execute('select codant, item, codccusto from cadprolic').fetchall()}
 
