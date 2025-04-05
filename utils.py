@@ -16,9 +16,8 @@ global dict_fornecedores
 dict_fornecedores = {}
 
 def armazena_fornecedores():
-    if len(dict_fornecedores) == 0:
-        for insmf, codif, nome, codant in CUR_FDB.execute("select replace(replace(replace(insmf,'.',''),'/',''),'-',''), codif, nome, codant from desfor").fetchall():
-            dict_fornecedores[insmf] = {'codif': codif, 'nome': nome, 'codant': codant}
+    for insmf, codif, nome, codant in CUR_FDB.execute("select replace(replace(replace(insmf,'.',''),'/',''),'-',''), codif, nome, codant from desfor").fetchall():
+        dict_fornecedores[insmf] = {'codif': codif, 'nome': nome, 'codant': codant}
 
 def cria_campo(tabela, campo):
     try:
@@ -32,10 +31,8 @@ global dict_produtos
 dict_produtos = {}
 
 def armazena_produtos():
-    if len(dict_produtos) < 1:
-        for k, v in CUR_FDB.execute('select cast(codreduz as varchar(50)), cadpro from cadest').fetchall():
-            dict_produtos[k] = v 
-    else: print('itens já estão armazenados!')
+    for k, v in CUR_FDB.execute('select cast(codreduz as varchar(50)), cadpro from cadest').fetchall():
+        dict_produtos[k] = v 
 
 armazena_produtos() if len(dict_produtos) == 0 else ...
 

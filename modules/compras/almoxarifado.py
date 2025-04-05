@@ -67,43 +67,34 @@ def saldo_inicial():
     id_requi = CUR_FDB.execute("select coalesce(max(id_requi),0) from requi").fetchone()[0]
 
     rows = fetchallmap(f"""
-    select
-        *
-    from
-        (
-        select
-            p.cdmaterial,
-            (
-            select
-                sum(m.qtdeentrada - m.qtdesaida)
-            from
-                {ENTIDADE}_ALMOX.dbo.MOVIMENTO M
-            where
-                m.CDMATERIAL = p.cdmaterial
-                and m.cdoperacao <> 12
-                and year(DTMOVIMENTO) < {exercicio} 
-            ) as quantidade,
-            (
-            select
-                top 1 
-            sldvalor
-            from
-                {ENTIDADE}_ALMOX.dbo.MOVIMENTO M
-            where
-                m.CDMATERIAL = p.cdmaterial
-                and year(DTMOVIMENTO) < {exercicio}
-                    and m.cdoperacao <> 12
-                order by
-                    NRLANCAMENTO desc,
-                    DTMOVIMENTO desc) as valor
-        from
-            {ENTIDADE}_ALMOX.dbo.PRODUTO P
-        where
-            p.tpmaterial <> 2) as q
-    where
-        quantidade > 0
-    order by
-        cdmaterial""")
+    WITH UltimoMovimento AS (
+    SELECT 
+        m.cdmaterial,
+        m.cdAlmoxarifado,
+        m.qtdeentrada,
+        m.sldQuantidade,
+        m.sldvalor,
+        m.dtmovimento,
+        m.nrlancamento,
+        ROW_NUMBER() OVER (
+            PARTITION BY m.cdmaterial, m.cdAlmoxarifado 
+            ORDER BY m.dtmovimento DESC, m.nrlancamento DESC
+        ) AS rn
+    FROM 
+        {ENTIDADE}_ALMOX.dbo.MOVIMENTO m
+    where year(dtmovimento) < {exercicio}
+    )
+    SELECT 
+        cdmaterial,
+        cdAlmoxarifado,
+        sldQuantidade,
+        sldvalor,
+        dtmovimento,
+        nrlancamento
+    FROM 
+        UltimoMovimento
+    WHERE 
+        rn = 1 and sldQuantidade > 0""")
     
     item = 0
     existe_lote = CUR_FDB.execute("select count(*) from lote_entidade").fetchone()[0]
@@ -140,15 +131,15 @@ def saldo_inicial():
             commit()
         item += 1
         cadpro = dict_produtos[str(row['cdmaterial'])]
-        quan1 = row['quantidade']
+        quan1 = row['sldQuantidade']
         quan2 = 0
-        vaun1 = row['valor'] / row['quantidade']
+        vaun1 = row['sldvalor'] / row['sldQuantidade']
         vaun2 = 0
-        vato1 = row['valor']
+        vato1 = row['sldvalor']
         vato2 = 0
         lote = '000000000'
         codccusto = 0
-        destino = '000000001'
+        destino = str(row['cdAlmoxarifado']).zfill(9)
 
         CUR_FDB.execute(insert_icadreq, (EMPRESA, id_requi, requi, item, cadpro, quan1, quan2, vaun1, vaun2, vato1, vato2, lote, codccusto, destino))
         commit()
@@ -176,7 +167,7 @@ def movimento():
         vlcustoitem,
         vlprecounitario,
         vlcustomediocontabilizado ,
-        cdalmoxarifado,
+        cast(cdalmoxarifado as varchar) cdalmoxarifado,
         cdmaterial,
         cdfornecedor,
         nrnota,
@@ -187,11 +178,11 @@ def movimento():
         {ENTIDADE}_ALMOX.dbo.movimento
     where
         year(dtmovimento) = {exercicio}
-        and cdoperacao > 0
+        and cdoperacao not in (0,12)
     order by
         dtmovimento,
-        nrdocumento ,
-        cdoperacao
+        operacao,
+        nrdocumento
     """)
 
     item = 0
@@ -219,19 +210,11 @@ def movimento():
                 dtpag = None
                 entr = 'S'
                 said = 'N'
-                vaun1 = row['vlcustoitem']
-                vaun2 = 0
-                vato1 = row['vlcustoitem']*row['qtdeentrada']
-                vato2 = 0
             else:
                 datae = None
                 dtpag = dtlan
                 entr = 'N'
                 said = 'S'
-                vaun2 = row['vlcustoitem']
-                vaun1= 0
-                vato2 = row['vlcustoitem']*row['qtdeentrada']
-                vato1 = 0
             comp = 'P'
             nempg = None
             codif = None if row['cdfornecedor'] == 0 else obter_codif_por_codant(row['cdfornecedor'])
@@ -252,11 +235,21 @@ def movimento():
             commit()
         item += 1
         cadpro = dict_produtos[str(row['cdmaterial'])]
+        if row['operacao'] == 'E':
+            vaun1 = row['vlcustoitem']
+            vaun2 = 0
+            vato1 = row['vlcustoitem']*row['qtdeentrada']
+            vato2 = 0
+        else:
+            vaun2 = row['vlcustoitem']
+            vaun1= 0
+            vato2 = row['vlcustoitem']*row['qtdesaida']
+            vato1 = 0
         quan1 = row['qtdeentrada']
         quan2 = row['qtdesaida']
         lote = '000000000'
         codccusto = row['cdorgaoreduzido']
-        destino = '00000001'
+        destino = row['cdalmoxarifado'].zfill(9)
 
         CUR_FDB.execute(insert_icadreq, (EMPRESA, id_requi, requi, item, cadpro, quan1, quan2, vaun1, 
                         vaun2, vato1, vato2, lote, codccusto, destino))

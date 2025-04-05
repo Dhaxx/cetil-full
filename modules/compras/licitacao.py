@@ -1,4 +1,4 @@
-from connection import commit, CUR_FDB, fetchallmap, ENTIDADE
+from connection import commit, CUR_FDB, fetchallmap, ENTIDADE, EXERCICIO, CUR_SQLS
 from utils import limpa_tabela, EMPRESA, dict_produtos, dict_fornecedores, obter_codif_por_nome, cria_campo, obter_codif_por_codant
 
 def cadlic():
@@ -243,6 +243,7 @@ def prolic_prolics():
             WHEN (l.cdtipoprocesso = 4 AND l.cdtipomodalidade IN (5, 8)) THEN 'S'
             ELSE NULL
         END AS lance,
+        fornecedor.inpessoafisicajuridica,
         trim(CAST(CAST(fornecedor.nrcgccpf AS DECIMAL(14,0)) AS CHAR(14))) insmf
     FROM {ENTIDADE}_COMPRAS.dbo.proposta a
     JOIN {ENTIDADE}_COMPRAS.dbo.processolicitatorio p 
@@ -267,15 +268,18 @@ def prolic_prolics():
         numlic = row['identificador']
         insmf = row['insmf']
 
-        if (len(insmf) > 11 and  len(insmf) < 14):
+        if row['inpessoafisicajuridica'] == '2':
             insmf = insmf.zfill(14)
-        elif len(insmf) < 11:
+        else:
             insmf = insmf.zfill(11)
 
         if insmf in dict_fornecedores:
             codif = dict_fornecedores[insmf]['codif']
         else:
             codif = obter_codif_por_nome(row['nmfornecedor'])
+
+        if not codif:
+            codif = obter_codif_por_codant(row['cdfornecedor'])
         habilitado = 'S'
         status = 'S'
         cpf = row['insmf']
@@ -287,12 +291,13 @@ def prolic_prolics():
     commit()
 
 def cadprolic():
+    cria_campo('cadpro', 'codant')
     limpa_tabela('cadpro_status', 'cadprolic_detalhe', 'cadprolic')
     CUR_FDB.execute('ALTER TRIGGER TBIU_CADPRO_STATUS inactive')
     commit()
     cria_campo('cadprolic', 'codant')
 
-    rows = fetchallmap(f"""
+    CUR_SQLS.execute(f"""
     SELECT
         x.nrprocesso,
         x.dtanoprocesso,
@@ -372,11 +377,13 @@ def cadprolic():
                 select
                     pkid,
                     fk_tabela_preco,
-                    vl_estimado
+                    vl_estimado,
+                    nr_lote
                 from
                     {ENTIDADE}_COMPRAS.dbo.TABELA_PRECO_PROCESSO tpp) t on
                 t.pkid = c.FK_TABELA_PRECO_PROCESSO) AS qr
-        ) AS x""")
+        ) AS x
+        where x.dtanoprocesso >= {EXERCICIO-5}""")
 
     insert_itens = CUR_FDB.prep("""
     insert
@@ -442,21 +449,21 @@ def cadprolic():
         values (?,?,?,?,?,?)
         """)
     
-    for row in rows:
-        item = row['nritem']
+    for row in CUR_SQLS:
+        item = row.nritem
         item_mask = item
         itemorc = None
-        cadpro = dict_produtos[str(row['cdmaterial'])]
-        quan1 = row['qtitemObjeto']
-        vamed1 = row['vlCotacaoItem']
-        vatomed1 = row['vlCotacaoItem']*row['qtitemObjeto']
-        codccusto = row['codccusto']
+        cadpro = dict_produtos[str(row.cdmaterial)]
+        quan1 = row.qtitemObjeto
+        vamed1 = row.vlCotacaoItem
+        vatomed1 = row.vlCotacaoItem*row.qtitemObjeto
+        codccusto = row.codccusto
         ficha = None
         reduz = 'N'
         ordnumorc = None
-        numlic = row['PKID']
+        numlic = row.PKID
         id_cadorc = None
-        lotelic = f'{row['lote']:08}' if row['lote'] > 0 else None
+        lotelic = f'{row.lote:08}' if row.lote > 0 else None
         item_lote = item
         numorc = None
         item_cadprolic = item
@@ -465,7 +472,7 @@ def cadprolic():
         itemp = item
         telafinal = 'I_ENCERRAMENTO'
         aceito = 'S'
-        codant = row['codant']
+        codant = row.codant
 
         CUR_FDB.execute(insert_itens,(item , item_mask , itemorc , cadpro , quan1
                 , vamed1 , vatomed1 , codccusto , ficha , reduz , ordnumorc
@@ -539,81 +546,66 @@ def proposta():
         , vaunadt
         , vatoadt
         , tpcontrole_saldo
+        , codant
     ) values(?,?,?,?,?,?,?,
-    ?,?,?,?,?,?,?,?,?)""")
+    ?,?,?,?,?,?,?,?,?,?)""")
     
-    rows = fetchallmap(f"""
-    SELECT
-        p.nrprocesso,
-        c.dtanoprocesso,
-        c.cdtipoProcesso,
-        p.PKID,
-        f.insmf,
-        c.cdFornecedor,
-        c.Lote,
-        c.nritem,
-        case
-            when c.FK_TABELA_PRECO_PROCESSO is not null then concat('TBL', cast(fk_tabela_preco as varchar))
-            else cast(c.cdMaterial as varchar)
-        end as cdMaterial,
-        vlCotacaoProposta,
-        nrClassificacao,
-        coalesce(i.qtitemObjeto,
-        1) qtitemObjeto,
-        i.vlCotacaoItem,
-        CONCAT(p.PKID, '-', c.nritem, '-', case
-                        when c.FK_TABELA_PRECO_PROCESSO is not null then concat('TBL', cast(fk_tabela_preco as varchar))
-                        else cast(c.cdMaterial as varchar)
-                    end, '-', c.lote) AS codant,
-        coalesce(
-                        (
-        select
-            top 1 cp.vlcotacaoproposta
+    CUR_SQLS.execute(f"""
+    select
+            p.pkid,
+            a.cdfornecedor,
+            fornecedor.nmfornecedor,
+            case when a.invencedor = 'S' then 1 else 2 end subem,	
+            trim(CAST(CAST(fornecedor.nrcgccpf AS DECIMAL(14, 0)) AS CHAR(14))) insmf,
+            case
+	            when a.FK_TABELA_PRECO_PROCESSO is not null then concat('TBL', cast(t.FK_TABELA_PRECO as varchar))
+	            else cast(i.cdMaterial as varchar)
+	        end as cdMaterial,
+            a.nritemproposta,
+            coalesce(t.nr_lote, a.lote) lote,
+            CONCAT(p.PKID, '-', a.nritemproposta, '-', case
+                when a.FK_TABELA_PRECO_PROCESSO is not null then concat('TBL', cast(t.FK_TABELA_PRECO as varchar))
+                else cast(i.cdMaterial as varchar)
+            end, '-', coalesce(t.nr_lote, a.lote)) AS codant,
+            a.qtitemproposta,
+            a.vlcotacaoproposta,
+            coalesce(
+            (select top 1 cp.vlcotacaoproposta from {ENTIDADE}_COMPRAS.dbo.CLASSIFICACAOPROPOSTA cp where
+            a.dtanoprocesso = cp.dtanoprocesso
+            and a.cdtipoprocesso = cp.cdtipoprocesso
+            and a.nrprocesso = cp.nrprocesso
+            and coalesce(t.nr_lote, a.lote) = cp.lote
+            and a.nritemproposta = cp.nritem
+            and i.cdmaterial = cp.cdmaterial 
+            and a.cdfornecedor = cp.cdfornecedor   
+            and cp.tpregistro = 'R' order by ordem desc),a.vlcotacaoproposta) valoraditado
         from
-            {ENTIDADE}_COMPRAS.dbo.CLASSIFICACAOPROPOSTA cp
-        where
-            c.dtanoprocesso = cp.dtanoprocesso
-            and c.cdtipoprocesso = cp.cdtipoprocesso
-            and c.nrprocesso = cp.nrprocesso
-            and c.lote = cp.lote
-            and c.nritem = cp.nritem
-            and c.cdmaterial = cp.cdmaterial
-            and c.cdfornecedor = cp.cdfornecedor
-            and cp.tpregistro = 'R'
-        order by
-            ordem desc),
-        c.vlcotacaoproposta) valoraditado
-    FROM
-        {ENTIDADE}_COMPRAS.dbo.classificacaoproposta c
-    JOIN {ENTIDADE}_COMPRAS.dbo.PROCESSOLICITATORIO p 
-                ON
-        c.nrProcesso = p.nrProcesso
-        AND c.dtAnoProcesso = p.dtAnoProcesso
-        AND c.cdTipoProcesso = p.cdTipoProcesso
-    left JOIN {ENTIDADE}_COMPRAS.dbo.ITEMOBJETO i 
-                ON
-        i.ID_PROCESSOLICITATORIO = p.PKID
-        and CONCAT(i.ID_PROCESSOLICITATORIO, '-', i.nritem, '-', i.cdmaterial, '-', i.lote) = CONCAT(c.FK_PROCESSO_LICITATORIO, '-', c.nritem, '-', c.cdmaterial, '-', c.lote)
-    JOIN (
-        select
-            trim(CAST(CAST(f.nrcgccpf AS DECIMAL(14, 0)) AS CHAR(14))) insmf,
-            f.cdFornecedor
-        from
-            {ENTIDADE}_ALMOX.dbo.Fornecedor f) f on
-        f.cdFornecedor = c.cdFornecedor
-    left join (
+            {ENTIDADE}_COMPRAS.dbo.proposta a
+            join {ENTIDADE}_COMPRAS.dbo.processolicitatorio p on p.dtanoprocesso = a.dtanoprocesso 
+            and p.nrprocesso  = a.nrprocesso and p.cdtipoprocesso  = a.cdtipoprocesso
+        left join (
         select
             pkid,
-            fk_tabela_preco
+            fk_tabela_preco,
+            nr_lote
         from
             {ENTIDADE}_COMPRAS.dbo.TABELA_PRECO_PROCESSO) t on
-        t.pkid = c.FK_TABELA_PRECO_PROCESSO""")
+        t.pkid = a.FK_TABELA_PRECO_PROCESSO
+        left join {ENTIDADE}_COMPRAS.dbo.itemobjeto i on
+            a.dtanoprocesso = i.dtanoprocesso
+            and a.cdtipoprocesso = i.cdtipoprocesso
+            and a.nrprocesso = i.nrprocesso
+            and coalesce(t.nr_lote, a.lote) = i.lote
+            and a.nritemproposta = i.nritem
+        inner join {ENTIDADE}_ALMOX.dbo.fornecedor on
+            a.cdfornecedor = fornecedor.cdfornecedor
+        where a.dtanoprocesso >= {EXERCICIO-5}""")
 
     itens_processo = {codant : (item, codccusto) for codant, item, codccusto in CUR_FDB.execute('select codant, item, codccusto from cadprolic').fetchall()}
 
-    for row in rows:
+    for row in CUR_SQLS:
         sessao = 1
-        insmf = row['insmf']
+        insmf = row.insmf
 
         if (len(insmf) > 11 and  len(insmf) < 14):
             insmf = insmf.zfill(14)
@@ -623,37 +615,37 @@ def proposta():
         if insmf in dict_fornecedores:
             codif = dict_fornecedores[insmf]['codif']
         else:
-            codif = obter_codif_por_codant(row['cdFornecedor'])
+            codif = obter_codif_por_codant(row.cdfornecedor)
         
-        itens_info = itens_processo.get(str(row['codant']).strip(), 0)
+        itens_info = itens_processo.get(str(row.codant).strip(), 0)
 
         if itens_info.__class__ == tuple:
             item = itens_info[0]
             codccusto = itens_info[1] 
         else:
-            item = 0
+            item = row.nritemproposta
             codccusto = 0
         itemp = item
-        quan1 = row['qtitemObjeto']
-        vaun1 = row['vlCotacaoProposta']
+        quan1 = row.qtitemproposta
+        vaun1 = row.vlcotacaoproposta
         vato1 = quan1*vaun1
-        numlic = row['PKID']
+        numlic = row.pkid
         status = 'C'
-        subem = row['nrClassificacao']
+        subem = row.subem
         marca = None
         itemlance = 'S'
 
-        lotelic = f'{row['Lote']:08}' if row['Lote'] > 0 else None
+        lotelic = f'{row.lote:08}' if row.lote > 0 else None
 
         ult_sessao = 1
         vaunf = vaun1
         vatof = vato1
 
-        cadpro = dict_produtos[str(row['cdMaterial'])]
+        cadpro = dict_produtos[str(row.cdMaterial)]
                                         
         qtdadt = quan1
-        vaunadt = row['valoraditado']
-        vatoadt =  row['valoraditado'] * row['qtitemObjeto']
+        vaunadt = row.valoraditado
+        vatoadt =  row.valoraditado * row.qtitemproposta
         tpcontrole_saldo = "Q"
 
         try:
@@ -665,8 +657,8 @@ def proposta():
 
             CUR_FDB.execute(insert_cadpro,(codif , cadpro , quan1 , vaun1 , vato1 , subem , status
                     , item , codccusto , numlic , ult_sessao , itemp , qtdadt , vaunadt , vatoadt
-                    , tpcontrole_saldo))
-        except:
+                    , tpcontrole_saldo, row.codant))
+        except Exception as e:
             continue
     commit()
 
@@ -802,3 +794,8 @@ def proposta():
             REGISTROPRECO = 'S'
     """)
     commit()
+
+    # CUR_FDB.execute("""MERGE INTO cadpro a USING (SELECT cadpro, numlic, codant, item FROM cadprolic) b
+    # ON a.numlic = b.numlic AND a.cadpro = b.cadpro and a.item = b.item
+    # WHEN MATCHED then UPDATE SET a.codant = b.codant""")
+    # commit()

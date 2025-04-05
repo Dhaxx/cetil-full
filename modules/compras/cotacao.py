@@ -319,34 +319,35 @@ def vcadorc():
             print(f'idcadorc: {id_cadorc} - item: {item}')
     commit()
 
-    CUR_FDB.execute("update fcadorc f set f.valorc = (select sum(v.vlrtot) from vcadorc v where f.codif = v.codif and f.id_cadorc = v.id_cadorc)")
-    CUR_FDB.execute("update icadorc_cot c set c.codif = (select first 1 v.ganhou from vcadorc v where v.id_cadorc = c.id_cadorc and v.item = c.item)")
-    CUR_FDB.execute("""
-    MERGE INTO icadorc_cot c
-    USING (
-        SELECT
-            v.numorc,
-            v.item,
-            SUM(v.VLRUNI) AS total_vlruni,
-            COUNT(v.CODIF) AS total_itens
-        FROM
-            vcadorc v
-        WHERE
-            v.VLRUNI > 0
-        GROUP BY
-            v.numorc,
-            v.item
-    ) v
-    ON (c.numorc = v.numorc AND c.item = v.item)
-    WHEN MATCHED THEN
-        UPDATE SET
-            c.valunt = CASE
-                WHEN v.total_itens > 0 THEN v.total_vlruni / v.total_itens
-                ELSE c.valunt -- Mantém o valor atual se a divisão for inválida
-            END;
-    """)
-    CUR_FDB.execute("update icadorc_cot set valtot = valunt * qtd")
-    CUR_FDB.execute("update icadorc_cot set tipo = 'M' , flg_aceito = 'S'")
+    CUR_FDB.execute("""MERGE into fcadorc a USING (SELECT sum(vlrtot) total, codif, id_cadorc FROM vcadorc GROUP BY codif, id_cadorc) b
+        ON a.codif = b.codif AND a.id_cadorc = b.id_cadorc 
+        WHEN MATCHED THEN UPDATE SET a.valorc = b.total""")
+    CUR_FDB.execute("""MERGE INTO icadorc_cot a USING (SELECT DISTINCT ganhou, id_cadorc, item FROM vcadorc) b
+        ON a.id_cadorc = b.id_cadorc AND a.item = b.item 
+        WHEN MATCHED THEN UPDATE SET a.codif = b.ganhou""")
+    CUR_FDB.execute("""MERGE INTO icadorc_cot c
+        USING (
+            SELECT
+                v.numorc,
+                v.item,
+                SUM(v.VLRUNI) AS total_vlruni,
+                COUNT(v.CODIF) AS total_itens
+            FROM
+                vcadorc v
+            WHERE
+                v.VLRUNI > 0
+            GROUP BY
+                v.numorc,
+                v.item
+        ) v
+        ON (c.numorc = v.numorc AND c.item = v.item)
+        WHEN MATCHED THEN
+            UPDATE SET
+                c.valunt = CASE
+                    WHEN v.total_itens > 0 THEN v.total_vlruni / v.total_itens
+                    ELSE c.valunt -- Mantém o valor atual se a divisão for inválida
+                END;
+        """)
     CUR_FDB.execute("update icadorc_cot set valunt = 0 where valunt is null")
-    CUR_FDB.execute("update icadorc_cot t set t.valtot = qtd * valunt where valtot is null")
+    CUR_FDB.execute("update icadorc_cot set valtot = valunt * qtd, tipo = 'M', flg_aceito = 'S'")
     commit()

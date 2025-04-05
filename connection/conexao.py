@@ -61,3 +61,5 @@ def fetchallmap(query):
     result = []
     [result.append(dict(zip(colunas, row))) for row in rows]
     return result
+
+EXERCICIO = int(CUR_FDB.execute('select mexer from cadcli').fetchone()[0])

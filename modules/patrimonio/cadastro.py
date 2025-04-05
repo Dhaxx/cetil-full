@@ -133,91 +133,100 @@ def pt_movbem():
 
     rows = fetchallmap(f"""
     select
-        case intipomovimento when 'B' then 'B'
+        case intipomovimento
+            when 'B' then 'B'
             when 'T' then 'T'
             when 'I' then 'A'
-            else intipomovimento end tipomovimento ,   *
-    from
-        (
+            else intipomovimento
+        end as tipomovimento,
+        * 
+    from (
         select
-            cditem ,
-            dtmovimento ,
-            intipomovimento ,
-            case
-                when m.intipomovimento = 'T' then 0
-                when m.intipomovimento = 'B' then m.vlareavaliar *-1
-                when m.intipomovimento = 'R' then m.vlareavaliar - m.vlanterior
-                else m.vlareavaliar
-            end as valor,
-            cast(dsobservacao as varchar) as obs,
-            cdlocalanterior,
-            cdlocalatual,
-            v.dsmotivo ,
-            m.inestorno ,
-            m.cdtpbaixa ,
-            m.dsfundamento ,
-            chmovimento,
-            'N' depreciacao
-        from
-            {ENTIDADE}_PATRI.dbo.movimento m
-        left join {ENTIDADE}_PATRI.dbo.motivo v on
-            v.cdmotivo = m.cdmotivo
-        where
-            inestorno > -1
-            and intipomovimento <> 'E'
-    union
-        select
-            cditem,
-            dtmovimento,
-            'R',
-            vldepreciacao *-1,
-            'Depreciação',
-            null,
-            null,
-            'Depreciação',
-            inestorno,
-            null,
-            null,
-            99999999,
-            'S' depreciacao
-        from
-            {ENTIDADE}_PATRI.dbo.movimentodepreciacao md
-        where
-            inestorno > -1
-            and not exists(
-            select
-                1
+                cditem ,
+                dtmovimento ,
+                intipomovimento ,
+                case
+                    when m.intipomovimento = 'T' then 0
+                    when m.intipomovimento = 'B' then m.vlareavaliar *-1
+                    when m.intipomovimento = 'R' then m.vlareavaliar - m.vlanterior
+                    else m.vlareavaliar
+                end as valor,
+                cast(dsobservacao as varchar) as obs,
+                cdlocalanterior,
+                cdlocalatual,
+                v.dsmotivo ,
+                m.inestorno ,
+                m.cdtpbaixa ,
+                m.dsfundamento ,
+                chmovimento,
+                'N' depreciacao
             from
-                {ENTIDADE}_PATRI.dbo.movimentodepreciacao mc
+                {ENTIDADE}_PATRI.dbo.movimento m
+            left join {ENTIDADE}_PATRI.dbo.motivo v on
+                v.cdmotivo = m.cdmotivo
             where
-                mc.cditem = md.cditem
-                and mc.dtestorno = md.dtmovimento
-                and mc.vldepreciacao = md.vldepreciacao
-                and mc.inestorno < 0 )
-    union
-        select
-            cditem ,
-            dtmovimento ,
-            'R',
-            vlcomplementar ,
-            'Valor Complementar',
-            null,
-            null,
-            'Valor Complementar',
-            inestorno ,
-            null,
-            null,
-            99999999,
-            'N'
-        from
-            {ENTIDADE}_PATRI.dbo.movimentovlcomplementar c
-        where
-            inestorno > -1 and exists(select 1 from {ENTIDADE}_PATRI.dbo.item i where i.cditem = c.cditem)) as movimentacao
+                inestorno > -1
+                and intipomovimento <> 'E'
+        union
+            select
+                cditem,
+                dtmovimento,
+                'R',
+                vldepreciacao *-1,
+                'Depreciação',
+                null,
+                null,
+                'Depreciação',
+                inestorno,
+                null,
+                null,
+                99999999,
+                'S' depreciacao
+            from
+                {ENTIDADE}_PATRI.dbo.movimentodepreciacao md
+            where
+                inestorno > -1
+                and not exists(
+                select
+                    1
+                from
+                    {ENTIDADE}_PATRI.dbo.movimentodepreciacao mc
+                where
+                    mc.cditem = md.cditem
+                    and mc.dtestorno = md.dtmovimento
+                    and mc.vldepreciacao = md.vldepreciacao
+                    and mc.inestorno < 0 )
+        union
+            select
+                cditem ,
+                dtmovimento ,
+                'R',
+                vlcomplementar ,
+                'Valor Complementar',
+                null,
+                null,
+                'Valor Complementar',
+                inestorno ,
+                null,
+                null,
+                99999999,
+                'N'
+            from
+                {ENTIDADE}_PATRI.dbo.movimentovlcomplementar c
+            where
+                inestorno > -1 and exists(select 1 from {ENTIDADE}_PATRI.dbo.item i where i.cditem = c.cditem)
+    ) as movimentacao
     order by
         cditem,
-        dtmovimento ,
-        chmovimento
-    """)
+        dtmovimento,
+        case
+            when intipomovimento = 'B' then 99
+            when intipomovimento = 'T' then 50
+            when intipomovimento = 'I' then 10
+            when intipomovimento = 'R' then 20
+            else 0
+        end,
+        chmovimento""")
 
     insert = CUR_FDB.prep("""
     insert

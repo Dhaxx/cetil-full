@@ -1,5 +1,5 @@
-from connection import commit, CUR_FDB, fetchallmap, ENTIDADE
-from utils import limpa_tabela, EMPRESA, dict_produtos, dict_fornecedores, cria_campo, obter_codif_por_nome, EXERCICIO
+from connection import commit, CUR_FDB, fetchallmap, ENTIDADE, EXERCICIO, CUR_SQLS
+from utils import limpa_tabela, EMPRESA, dict_produtos, dict_fornecedores, cria_campo, obter_codif_por_nome
 
 def pedidos():
     limpa_tabela('icadped', 'cadped')
@@ -8,7 +8,75 @@ def pedidos():
     cria_campo("cadped","conv_empenho_ano")
     cria_campo("icadped","codant")
 
-    rows = fetchallmap(f"""
+    insert_cabecalho = CUR_FDB.prep(
+        """
+        insert
+            into
+            cadped (
+                numped
+                , num
+                , ano
+                , codif
+                , datped
+                , ficha
+                , codccusto
+                , entrou
+                , numlic
+                , proclic
+                , localentg
+                , condpgto
+                , prozoentrega
+                , obs
+                , id_cadped
+                , empresa
+                , aditamento
+                , contrato
+                , npedlicit
+                , id_cadpedlicit 
+                , conv_empenho
+                , conv_empenho_ano               
+            )
+        values(?,?,?,?,?,
+               ?,?,?,?,?,
+               ?,?,?,?,?,
+               ?,?,?,?,?,?,?)""")
+    
+    insert_itens = CUR_FDB.prep(
+        """
+        insert
+            into
+            icadped (
+                numped
+                , id_cadped
+                , item
+                , cadpro
+                , codccusto
+                , qtd
+                , prcunt
+                , prctot
+                , ficha
+                , desdobro
+                , marca
+                , item_licit
+                , cadpro_licit
+                , codant
+            )
+        values (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""")
+    
+    pedido_atual = ''
+    
+    fichas = fetchallmap(f"""
+        select
+        codigo_despesa_principal as fichaprincipal,
+        cddespesa as fichasecundaria
+    from
+        {ENTIDADE}_COMPRAS.dbo.despesa
+    where
+        dtano = 2025
+        and codigo_despesa_principal is not null
+    """)
+
+    CUR_SQLS.execute(f"""
     SELECT
         SUM(vlcotacaoproposta) AS vlcotacaoproposta,
         SUM(vltotalitem) AS vltotalitem,
@@ -175,99 +243,32 @@ def pedidos():
         dtanoempenho,
         nrempenho""")
 
-    insert_cabecalho = CUR_FDB.prep(
-        """
-        insert
-            into
-            cadped (
-                numped
-                , num
-                , ano
-                , codif
-                , datped
-                , ficha
-                , codccusto
-                , entrou
-                , numlic
-                , proclic
-                , localentg
-                , condpgto
-                , prozoentrega
-                , obs
-                , id_cadped
-                , empresa
-                , aditamento
-                , contrato
-                , npedlicit
-                , id_cadpedlicit 
-                , conv_empenho
-                , conv_empenho_ano               
-            )
-        values(?,?,?,?,?,
-               ?,?,?,?,?,
-               ?,?,?,?,?,
-               ?,?,?,?,?,?,?)""")
-    
-    insert_itens = CUR_FDB.prep(
-        """
-        insert
-            into
-            icadped (
-                numped
-                , id_cadped
-                , item
-                , cadpro
-                , codccusto
-                , qtd
-                , prcunt
-                , prctot
-                , ficha
-                , desdobro
-                , marca
-                , item_licit
-                , cadpro_licit
-            )
-        values (?,?,?,?,?,?,?,?,?,?,?,?,?)""")
-    
-    pedido_atual = ''
-    
-    fichas = fetchallmap(f"""
-        select
-        codigo_despesa_principal as fichaprincipal,
-        cddespesa as fichasecundaria
-    from
-        {ENTIDADE}_COMPRAS.dbo.despesa
-    where
-        dtano = 2025
-        and codigo_despesa_principal is not null
-    """)
-
     id_cadped = 0
     try:
         id_cadped = CUR_FDB.execute('select coalesce(id,0) from pk where tabela = cadped').fetchone()[0]
     except:
         pass
 
-    itens_cadpro = {codant: (codccusto, item, cadpro, codif) for codant, codccusto, item, codif, cadpro in CUR_FDB.execute("SELECT cc.CODANT, co.CODCCUSTO, co.item, co.codif, co.cadpro FROM cadpro co JOIN cadprolic cc ON co.item = cc.item AND co.numlic = cc.numlic where subem = 1")}
+    itens_cadpro = {codant: (codccusto, item, cadpro, codif) for codant, codccusto, item, codif, cadpro in CUR_FDB.execute("SELECT CODANT, CODCCUSTO, item, codif, cadpro FROM cadpro co where subem = 1")}
     exercicio = CUR_FDB.execute('SELECT mexer FROM CADCLI c ').fetchone()[0]
     item = 0
 
-    for row in rows:
+    for row in CUR_SQLS:
         ficha = None
-        if row['dtanoempenho'] == int(exercicio):
-            ficha = next((x['fichaprincipal'] for x in fichas if x['fichasecundaria'] == row['cddespesa']), None)
+        if row.dtanoempenho == int(exercicio):
+            ficha = next((x['fichaprincipal'] for x in fichas if x['fichasecundaria'] == row.cddespesa), None)
 
-        nroPedido = f'{row['nrempenho']:05}' + '/' + str(row['dtanoempenho'])[2:4]
+        nroPedido = f'{row.nrempenho:05}' + '/' + str(row.dtanoempenho)[2:4]
 
         if nroPedido != pedido_atual:
             id_cadped += 1
             pedido_atual = nroPedido
             numped = nroPedido
-            num = f'{row['nrempenho']:05}'
-            ano = row['dtanoempenho']
+            num = f'{row.nrempenho:05}'
+            ano = row.dtanoempenho
             item = 0
             
-            insmf = row['nrcgccpf']
+            insmf = row.nrcgccpf
 
             if (len(insmf) > 11 and  len(insmf) < 14):
                 insmf = insmf.zfill(14)
@@ -276,26 +277,26 @@ def pedidos():
 
             codif = dict_fornecedores.get(insmf, 0)
             if codif == 0:
-                codif = obter_codif_por_nome(row['nmfornecedor'])
+                codif = obter_codif_por_nome(row.nmfornecedor)
             else:
                 codif = codif['codif']
 
-            datped = row['dtempenho']
+            datped = row.dtempenho
             entrou = 'N'
-            numlic = row['ID_ProcessoLicitatorio']
-            proclic = f'{row['nrprocesso']:06}' '/' + str(row['dtanoprocesso'])[2:4]
+            numlic = row.ID_ProcessoLicitatorio
+            proclic = f'{row.nrprocesso:06}' '/' + str(row.dtanoprocesso)[2:4]
             localentg = None
-            condpgto = row['dscondicaopagamento']
+            condpgto = row.dscondicaopagamento
             prozoentrega = None
-            obs = row['dsobjeto']
+            obs = row.dsobjeto
             aditamento = None
             contrato = None
-            conv_empenho = row['nrempenhocp']
-            conv_empenho_ano = row['dtanoempenhocp']
+            conv_empenho = row.nrempenhocp
+            conv_empenho_ano = row.dtanoempenhocp
             codccusto = 0
 
-            if row['nrinstrumentocontratual'] is not None:
-                contrato = f'{row['nrinstrumentocontratual']}/{str(row['dtanoinstrumentocontratual'])[2:]}'
+            if row.nrinstrumentocontratual is not None:
+                contrato = f'{row.nrinstrumentocontratual}/{str(row.dtanoinstrumentocontratual)[2:]}'
             npedlicit = None
             id_cadpedlicit = None
 
@@ -305,40 +306,38 @@ def pedidos():
                                             , proclic, localentg, condpgto, prozoentrega
                                             , obs, id_cadped, EMPRESA, aditamento
                                             , contrato, npedlicit, id_cadpedlicit, conv_empenho, conv_empenho_ano))
-            except:
+            except Exception as e:
                 print(f'Erro ao inserir pedido {numped}')
         
-        codant = row['codant']        
+        codant = row.codant        
         item_info = itens_cadpro.get(codant, 0)
         item_licit = None
         cadpro_licit = None
-        cadpro = dict_produtos[str(row['cdmaterial'])]
+        cadpro = dict_produtos[str(row.cdmaterial)]
         item += 1
 
         try:
             if item_info == 0:
-                if row['lote'] > 9 or row['nritem'] > 99:
-                    item = str(row['lote'])  + '0' + str(row['nritem'])
-                codccusto = row['cdorgaoreduzido']
+                codccusto = row.cdorgaoreduzido
                 marca = None
-                if row['preco_por_tabela'] == 'S':
-                    item_licit = row['nritem']
+                if row.preco_por_tabela == 'S':
+                    item_licit = row.nritem
                     cadpro_licit = item_info[2]
             else:
                 cadpro = item_info[2]
                 codccusto = item_info[0]
                 marca = item_info[3]
-                if row['preco_por_tabela'] == 'S':
+                if row.preco_por_tabela == 'S':
                     item_licit = item_info[1]
                     cadpro_licit = item_info[2]
             
-            qtd = row['qtdeitem']
-            prcunt = row['vlcotacaoproposta']
-            prctot = row['vltotalitem']
+            qtd = row.qtdeitem
+            prcunt = row.vlcotacaoproposta
+            prctot = row.vltotalitem
             desdobro = None
 
             CUR_FDB.execute(insert_itens, (numped, id_cadped, item, cadpro, codccusto,
-                                        qtd, prcunt, prctot,ficha,desdobro, marca, item_licit, cadpro_licit))
+                                        qtd, prcunt, prctot,ficha,desdobro, marca, item_licit, cadpro_licit, codant))
         except Exception as e:
             print(f'Erro ao inserir item {item} do pedido {numped}')
     commit()
@@ -387,44 +386,56 @@ def pedidos():
             and c.registropreco = 'S')""")
     commit()
 
-    CUR_FDB.execute("""
-    EXECUTE BLOCK 
-    AS 
-    DECLARE VARIABLE ID_CADPED INTEGER;
-    DECLARE VARIABLE PKEMP INTEGER;
-    DECLARE VARIABLE cadpro_tabela VARCHAR(50);
-    DECLARE VARIABLE codccusto INTEGER;
-    BEGIN
-        FOR 
-            SELECT b.ID_CADPED, a.pkemp 
-            FROM despesitem a 
-            JOIN despes b ON a.pkemp = b.pkemp 
-            WHERE EXISTS (SELECT 1 FROM icadped c WHERE c.cadpro LIKE '999%' AND c.id_cadped = b.id_cadped) 
-            INTO :id_cadped, :pkemp
-        DO
-        BEGIN
-            -- Buscar os valores máximos de CADPRO e CODCCUSTO para o ID_CADPED
-            SELECT MAX(CADPRO), MAX(codccusto) 
-            FROM icadped 
-            WHERE id_cadped = :id_cadped 
-            INTO :cadpro_tabela, :codccusto;
+    # CUR_FDB.execute("""
+    # EXECUTE BLOCK 
+    # AS 
+    # DECLARE VARIABLE ID_CADPED INTEGER;
+    # DECLARE VARIABLE PKEMP INTEGER;
+    # DECLARE VARIABLE cadpro_tabela VARCHAR(50);
+    # DECLARE VARIABLE codccusto INTEGER;
+    # BEGIN
+    #     FOR 
+    #         SELECT b.ID_CADPED, a.pkemp 
+    #         FROM despesitem a 
+    #         JOIN despes b ON a.pkemp = b.pkemp 
+    #         WHERE EXISTS (SELECT 1 FROM icadped c WHERE c.cadpro LIKE '999%' AND c.id_cadped = b.id_cadped) 
+    #         INTO :id_cadped, :pkemp
+    #     DO
+    #     BEGIN
+    #         -- Buscar os valores máximos de CADPRO e CODCCUSTO para o ID_CADPED
+    #         SELECT MAX(CADPRO), MAX(codccusto) 
+    #         FROM icadped 
+    #         WHERE id_cadped = :id_cadped 
+    #         INTO :cadpro_tabela, :codccusto;
 
-            -- Remover os registros antigos
-            DELETE FROM icadped WHERE id_cadped = :id_cadped;
+    #         -- Remover os registros antigos
+    #         DELETE FROM icadped WHERE id_cadped = :id_cadped;
 
-            -- Inserir os novos registros
-            INSERT INTO icadped (numped, id_cadped, item, cadpro, codccusto, qtd, prcunt, prctot)
-            SELECT 0, :id_cadped, item, :cadpro_tabela, :codccusto, vltotal/vlunit, vlunit, vltotal
-            FROM despesitem 
-            WHERE pkemp = :pkemp and vlunit <> 0;
-        END
-        UPDATE ICADPED A SET A.NUMPED = (SELECT B.NUMPED FROM CADPED B WHERE B.ID_CADPED = A.ID_CADPED) where A.numped = '0';
-    END
-    """)
+    #         -- Inserir os novos registros
+    #         INSERT INTO icadped (numped, id_cadped, item, cadpro, codccusto, qtd, prcunt, prctot)
+    #         SELECT 0, :id_cadped, item, :cadpro_tabela, :codccusto, vltotal/vlunit, vlunit, vltotal
+    #         FROM despesitem 
+    #         WHERE pkemp = :pkemp and vlunit <> 0;
+    #     END
+    #     UPDATE ICADPED A SET A.NUMPED = (SELECT B.NUMPED FROM CADPED B WHERE B.ID_CADPED = A.ID_CADPED) where A.numped = '0';
+    # END
+    # """)
+    # commit()
+
+    CUR_FDB.execute("ALTER TRIGGER TAUP_ICADPED INACTIVE")
+    commit()
+
+    CUR_FDB.execute("UPDATE icadped SET item = item * 1000 where cadpro not starting '999.'")
+    commit()
+
+    CUR_FDB.execute("""MERGE INTO icadped a USING (SELECT max(item) item, codant FROM cadpro WHERE cadpro NOT STARTING '999.' AND subem = 1 GROUP BY 2) b
+        ON a.codant = b.codant AND a.item <> b.item
+        WHEN MATCHED THEN UPDATE SET a.item = b.item""")
+    commit()
 
 
 def autorizacao():
-    rows = fetchallmap(f"""
+    CUR_SQLS.execute(f"""
     select
         l.nrinstrumentocontratual,
         l.dtanoinstrumentocontratual,
@@ -553,17 +564,17 @@ def autorizacao():
     pedido_atual = ""
     itens_cadpro = {codant: (codccusto, item, cadpro, codif) for codant, codccusto, item, codif, cadpro in CUR_FDB.execute("SELECT cc.CODANT, co.CODCCUSTO, co.item, co.codif, co.cadpro FROM cadpro co JOIN cadprolic cc ON co.item = cc.item AND co.numlic = cc.numlic")}
     
-    for row in rows:
-        numero_composto = f'{row['nrinstrumentocontratual']}_{row['dtanoinstrumentocontratual']}_{row['tpinstrumentocontratual']}_{row['nr_empenho']}'
+    for row in CUR_SQLS:
+        numero_composto = f'{row.nrinstrumentocontratual}_{row.dtanoinstrumentocontratual}_{row.tpinstrumentocontratual}_{row.nr_empenho}'
         if numero_composto != pedido_atual:
             item = 0
             pedido_atual = numero_composto
             numero += 1
             num = f'{numero:05}'
-            numped = f'{num}/{str(row['dtanoprocesso'])[2:]}'
-            ano = row['dtanoprocesso']
+            numped = f'{num}/{str(row.dtanoprocesso)[2:]}'
+            ano = row.dtanoprocesso
 
-            npedlicit = f'{row['nr_empenho']:05}/{str(row['dt_ano_empenho'])[2:]}'
+            npedlicit = f'{row.nr_empenho:05}/{str(row.dt_ano_empenho)[2:]}'
             try:
                 pedido = next(x for x in lista_pedidos if x['numped'] == npedlicit)
             except:
@@ -577,11 +588,11 @@ def autorizacao():
             numlic = pedido['numlic']
             proclic = pedido['proclic']
             contrato = pedido['contrato']
-            datped = row['dtinstrumentocontratual']
+            datped = row.dtinstrumentocontratual
             entrou = 'N'
             codccusto = pedido['codccusto']
 
-            localentg = row['dslocalentrega']
+            localentg = row.dslocalentrega
             id_cadped += 1
             aditamento = None
 
@@ -593,9 +604,9 @@ def autorizacao():
             
         try:
             item += 1
-            codant = row['codant']        
+            codant = row.codant        
             item_info = itens_cadpro.get(codant, 0)
-            cadpro = dict_produtos[str(row['cdmaterial'])]
+            cadpro = dict_produtos[str(row.cdmaterial)]
             ehtabela = codant.split('-')[2]
 
             if 'TBL' in ehtabela and item_info != 0:
@@ -605,9 +616,9 @@ def autorizacao():
                 item_licit = None
                 cadpro_licit = None
 
-            qtd = row['qtitem']
-            prcunt = row['valor_unitario']
-            prctot = row['qtitem']*row['valor_unitario']
+            qtd = row.qtitem
+            prcunt = row.valor_unitario
+            prctot = row.qtitem*row.valor_unitario
             ficha = None
             desdobro = None
 
